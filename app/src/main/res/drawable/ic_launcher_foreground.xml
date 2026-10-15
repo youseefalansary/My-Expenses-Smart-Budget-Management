@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Main Wallet Body -->
+    <path
+        android:fillColor="#1E293B"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2.5"
+        android:pathData="M30,38 C30,34.7 32.7,32 36,32 L72,32 C75.3,32 78,34.7 78,38 L78,70 C78,73.3 75.3,76 72,76 L36,76 C32.7,76 30,73.3 30,70 Z" />
+
+    <!-- Wallet Flap Accent -->
+    <path
+        android:fillColor="#0F172A"
+        android:strokeColor="#10B981"
+        android:strokeWidth="2"
+        android:pathData="M30,42 L78,42 L78,48 C78,51 75,53 71,53 L37,53 C33,53 30,51 30,48 Z" />
+
+    <!-- Card Slot Accent Line -->
+    <path
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M38,40 L70,40" />
+
+    <!-- Wallet Clasp / Badge with Neon Glow -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M64,54 C64,51.8 65.8,50 68,50 L78,50 C79.1,50 80,50.9 80,52 L80,62 C80,63.1 79.1,64 78,64 L68,64 C65.8,64 64,62.2 64,60 Z" />
+
+    <!-- Clasp Center Dot -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 72, 57 A 2 2 0 1 0 72 57.01" />
+
+    <!-- Neon Coin Symbol Floating on Top -->
+    <path
+        android:fillColor="#06B6D4"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.2"
+        android:pathData="M 54, 28 A 9 9 0 1 0 54 46 A 9 9 0 1 0 54 28" />
+
+    <!-- Coin currency symbol (M / currency bar) -->
+    <path
+        android:strokeColor="#0F172A"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M51,34 L51,40 M57,34 L57,40 M49,37 L59,37" />
+</vector>

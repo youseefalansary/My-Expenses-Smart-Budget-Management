@@ -1,0 +1,6 @@
+{
+  "name": "مصروفي",
+  "description": "نظام إدارة ميزانية ذكي للطلاب والعمل الحر مع شلال خصم صارم ومحفظة متكاملة",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
