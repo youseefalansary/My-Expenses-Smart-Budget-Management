@@ -10,6 +10,7 @@ import com.example.data.MasrofiDatabase
 import com.example.data.MasrofiRepository
 import com.example.data.TransactionEntity
 import com.example.data.WorkHistoryEntity
+import com.example.data.calculateDailyAllowance
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -90,7 +91,7 @@ class MasrofiViewModel(application: Application) : AndroidViewModel(application)
         dataFlow,
         selectedPeriod
     ) { (state, recentTx, allTx), (work, debtsList, catsList), period ->
-        val allowance = if (state.daysLeft > 0) state.pocketCash / state.daysLeft else 0.0
+        val allowance = calculateDailyAllowance(state.dayStartPocketCash, state.daysLeft)
         val burnRate = if (allowance > 0) (state.todaySpent / allowance).toFloat() else 0f
         val remToday = kotlin.math.max(0.0, allowance - state.todaySpent)
         val todayStr = repository.getTodayDateStr()

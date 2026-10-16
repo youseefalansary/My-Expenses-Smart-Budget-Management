@@ -48,6 +48,24 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `app_state` ADD COLUMN `day_start_pocket_cash` REAL NOT NULL DEFAULT 0.0")
+        // Recover the opening-of-day budget for users upgrading from v1.1.
+        // Tracked pocket deductions are added back; legacy records fall back to today_spent.
+        db.execSQL(
+            """
+            UPDATE `app_state`
+            SET `day_start_pocket_cash` = `pocket_cash` + COALESCE(
+                (SELECT SUM(`deducted_from_pocket`) FROM `transactions`
+                 WHERE `date_iso` = `app_state`.`last_processed_date`),
+                `today_spent`
+            )
+            """.trimIndent()
+        )
+    }
+}
+
 @Database(
     entities = [
         AppStateEntity::class,
@@ -56,7 +74,7 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         DebtEntity::class,
         CategoryEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class MasrofiDatabase : RoomDatabase() {
@@ -77,7 +95,7 @@ abstract class MasrofiDatabase : RoomDatabase() {
                     MasrofiDatabase::class.java,
                     "masrofi_db.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance

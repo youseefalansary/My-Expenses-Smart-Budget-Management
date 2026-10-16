@@ -55,7 +55,10 @@ data class AppStateEntity(
     val thresholdAlertEnabled: Int = 0,
 
     @ColumnInfo(name = "category_alert_enabled", defaultValue = "0")
-    val categoryAlertEnabled: Int = 0
+    val categoryAlertEnabled: Int = 0,
+
+    @ColumnInfo(name = "day_start_pocket_cash", defaultValue = "0.0")
+    val dayStartPocketCash: Double = pocketCash
 )
 
 @Entity(tableName = "transactions")

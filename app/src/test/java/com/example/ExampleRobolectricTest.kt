@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.data.AppStateEntity
 import com.example.data.MasrofiDatabase
 import com.example.data.MasrofiRepository
+import com.example.data.calculateDailyAllowance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -194,6 +195,43 @@ class ExampleRobolectricTest {
         assertEquals(300.0, stateRestored.vault, 0.001)
         // CRITICAL: todaySpent must REMAIN 45.0 (not decremented because it was yesterday)
         assertEquals(45.0, stateRestored.todaySpent, 0.001)
+    }
+
+    @Test
+    fun `daily allowance remains based on day opening balance after spending`() = runBlocking {
+        repository.resetCycle(totalReceived = 950.0, days = 6, savingsType = "fixed", savingsValue = 150.0)
+        val initial = repository.getOrCreateAppState()
+        assertEquals(800.0, initial.pocketCash, 0.001)
+        assertEquals(150.0, initial.vault, 0.001)
+        db.appStateDao().insertOrUpdate(initial.copy(splurgePool = 20.0))
+
+        assertTrue(repository.recordExpense("طعام", 100.0, "طعام ومشروبات", false).success)
+        val afterFirstPurchase = repository.getOrCreateAppState()
+        val allowance = calculateDailyAllowance(afterFirstPurchase.dayStartPocketCash, afterFirstPurchase.daysLeft)
+        assertEquals(800.0 / 6.0, allowance, 0.001)
+        assertEquals(800.0 / 6.0 - 100.0, allowance - afterFirstPurchase.todaySpent, 0.001)
+
+        assertTrue(repository.recordExpense("وجبة ثانية", 30.0, "طعام ومشروبات", false).success)
+        val newestTransaction = repository.allTransactions.first().first()
+        val finalState = repository.getOrCreateAppState()
+        assertEquals(0.0, newestTransaction.deductedFromSplurge, 0.001)
+        assertEquals(20.0, finalState.splurgePool, 0.001)
+    }
+
+    @Test
+    fun `end of day moves unused allowance out of pocket exactly once`() = runBlocking {
+        repository.resetCycle(totalReceived = 950.0, days = 6, savingsType = "fixed", savingsValue = 150.0)
+        assertTrue(repository.recordExpense("طعام", 100.0, "طعام ومشروبات", false).success)
+
+        val result = repository.manualEndDay()
+        assertTrue(result.success)
+        assertEquals(800.0 / 6.0 - 100.0, result.surplus, 0.001)
+
+        val state = repository.getOrCreateAppState()
+        assertEquals(800.0 - 100.0 - result.surplus, state.pocketCash, 0.001)
+        assertEquals(result.surplus, state.splurgePool, 0.001)
+        assertEquals(state.pocketCash, state.dayStartPocketCash, 0.001)
+        assertEquals(5, state.daysLeft)
     }
 
     @Test

@@ -22,6 +22,11 @@ data class EndDayResult(
     val message: String
 )
 
+internal fun calculateDailyAllowance(dayStartPocketCash: Double, daysLeft: Int): Double {
+    if (daysLeft <= 0) return 0.0
+    return max(0.0, dayStartPocketCash) / daysLeft
+}
+
 class MasrofiRepository(
     private val appStateDao: AppStateDao,
     private val transactionDao: TransactionDao,
@@ -60,6 +65,7 @@ class MasrofiRepository(
                 isInstituteDay = 0,
                 lastProcessedDate = today,
                 workTotal = 0.0,
+                dayStartPocketCash = 1600.0,
                 lastClosedDate = "",
                 transportReserve = 0.0,
                 savingsType = "percentage",
@@ -108,13 +114,16 @@ class MasrofiRepository(
                 )
             } else {
                 // Not closed yet: close previous day once, transfer surplus and decrement daysLeft
-                val allowance = if (state.daysLeft > 0) state.pocketCash / state.daysLeft else 0.0
-                val surplus = max(0.0, allowance - state.todaySpent)
+                val allowance = calculateDailyAllowance(state.dayStartPocketCash, state.daysLeft)
+                val surplus = min(max(0.0, allowance - state.todaySpent), max(0.0, state.pocketCash))
+                val newPocketCash = max(0.0, state.pocketCash - surplus)
                 val newSplurge = state.splurgePool + surplus
                 val newDaysLeft = max(0, state.daysLeft - 1)
 
                 appStateDao.insertOrUpdate(
                     state.copy(
+                        pocketCash = newPocketCash,
+                        dayStartPocketCash = newPocketCash,
                         splurgePool = newSplurge,
                         daysLeft = newDaysLeft,
                         todaySpent = 0.0,
@@ -143,12 +152,15 @@ class MasrofiRepository(
             )
         }
 
-        val allowance = if (state.daysLeft > 0) state.pocketCash / state.daysLeft else 0.0
-        val surplus = max(0.0, allowance - state.todaySpent)
+        val allowance = calculateDailyAllowance(state.dayStartPocketCash, state.daysLeft)
+        val surplus = min(max(0.0, allowance - state.todaySpent), max(0.0, state.pocketCash))
+        val newPocketCash = max(0.0, state.pocketCash - surplus)
         val newSplurge = state.splurgePool + surplus
         val newDaysLeft = max(0, state.daysLeft - 1)
 
         val updatedState = state.copy(
+            pocketCash = newPocketCash,
+            dayStartPocketCash = newPocketCash,
             splurgePool = newSplurge,
             daysLeft = newDaysLeft,
             todaySpent = 0.0,
@@ -206,6 +218,8 @@ class MasrofiRepository(
         }
 
         val state = getOrCreateAppState()
+        val dailyAllowance = if (isYesterday) 0.0
+        else calculateDailyAllowance(state.dayStartPocketCash, state.daysLeft)
         var vaultWarned = false
 
         var newPocketCash = state.pocketCash
@@ -252,8 +266,7 @@ class MasrofiRepository(
             }
 
             if (remainingAmount > 0) {
-                val allowance = if (state.daysLeft > 0) newPocketCash / state.daysLeft else 0.0
-                val remainingAllowanceToday = max(0.0, allowance - state.todaySpent)
+                val remainingAllowanceToday = max(0.0, dailyAllowance - state.todaySpent)
 
                 if (remainingAmount <= remainingAllowanceToday) {
                     dedPocket = remainingAmount
@@ -408,6 +421,7 @@ class MasrofiRepository(
         val state = getOrCreateAppState()
         val updatedState = state.copy(
             pocketCash = state.pocketCash + amount,
+            dayStartPocketCash = state.dayStartPocketCash + amount,
             workTotal = state.workTotal + amount
         )
         appStateDao.insertOrUpdate(updatedState)
@@ -432,7 +446,12 @@ class MasrofiRepository(
             state.pocketCash + amount
         }
 
-        appStateDao.insertOrUpdate(state.copy(pocketCash = newPocket))
+        appStateDao.insertOrUpdate(
+            state.copy(
+                pocketCash = newPocket,
+                dayStartPocketCash = max(0.0, state.dayStartPocketCash + newPocket - state.pocketCash)
+            )
+        )
 
         debtDao.insert(
             DebtEntity(
@@ -455,7 +474,12 @@ class MasrofiRepository(
             max(0.0, state.pocketCash - debt.amount)
         }
 
-        appStateDao.insertOrUpdate(state.copy(pocketCash = newPocket))
+        appStateDao.insertOrUpdate(
+            state.copy(
+                pocketCash = newPocket,
+                dayStartPocketCash = max(0.0, state.dayStartPocketCash + newPocket - state.pocketCash)
+            )
+        )
         debtDao.updateSettled(debtId, 1)
     }
 
@@ -481,6 +505,7 @@ class MasrofiRepository(
         val state = getOrCreateAppState()
         val newState = state.copy(
             pocketCash = pocketAmount,
+            dayStartPocketCash = pocketAmount,
             vault = vaultAmount,
             splurgePool = 0.0,
             daysLeft = max(1, days),
@@ -546,11 +571,12 @@ class MasrofiRepository(
         val allCats = categoryDao.getAllCategoriesSync()
 
         val root = JSONObject()
-        root.put("version", "1.1")
+        root.put("version", "1.2")
         root.put("exportDate", getTodayDateStr() + " " + getCurrentTimeStr())
 
         val stateObj = JSONObject()
         stateObj.put("pocketCash", state.pocketCash)
+        stateObj.put("dayStartPocketCash", state.dayStartPocketCash)
         stateObj.put("vault", state.vault)
         stateObj.put("splurgePool", state.splurgePool)
         stateObj.put("daysLeft", state.daysLeft)
@@ -627,6 +653,10 @@ class MasrofiRepository(
             val newState = AppStateEntity(
                 id = 1,
                 pocketCash = stateObj.optDouble("pocketCash", 1500.0),
+                dayStartPocketCash = stateObj.optDouble(
+                    "dayStartPocketCash",
+                    stateObj.optDouble("pocketCash", 1500.0) + stateObj.optDouble("todaySpent", 0.0)
+                ),
                 vault = stateObj.optDouble("vault", 500.0),
                 splurgePool = stateObj.optDouble("splurgePool", 0.0),
                 daysLeft = stateObj.optInt("daysLeft", 30),

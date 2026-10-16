@@ -281,13 +281,13 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "ما الجديد في التحديث 1.1؟",
+                                text = "ما الجديد في التحديث 1.2؟",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "استرداد متعدد المصادر، حجز المواصلات الفعلي، وحماية إغلاق اليوم",
+                                text = "تصحيح المسموح اليومي وترحيل الفائض دون تكرار",
                                 fontSize = 10.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
