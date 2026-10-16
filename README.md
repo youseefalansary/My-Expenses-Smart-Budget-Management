@@ -1,17 +1,22 @@
-# مصروفاتي | My Expenses Smart Budget Management
+# مصروفي | My Expenses Smart Budget Management
 
-مشروع Android لتطبيق إدارة المصروفات. الاسم الظاهر للتطبيق على الجهاز: **مصروفاتي**.
+تطبيق Android عربي لإدارة المصروفات والميزانية.
 
-## تنزيل التطبيق
+## أحدث إصدار
 
-حمّل نسخة التثبيت التجريبية من [Masrofaty-debug.apk](release/Masrofaty-debug.apk).
+- الإصدار: **1.1** (versionCode **2**)
+- اسم التطبيق: **مصروفي**
+- [تنزيل APK الإصدار 1.1](release/Masrofi-v1.1-debug.apk)
+- [تنزيل ملفات مصدر الإصدار 1.1](release/Masrofi-v1.1-source.zip)
 
-## بناء المشروع
+النسخة السابقة محفوظة في `release/Masrofaty-debug.apk`.
 
-افتح هذا المستودع في Android Studio، ثم اختر **Build > Build APK(s)** أو نفّذ:
+## البناء والاختبارات
+
+يتطلب المشروع Android SDK 36 وJDK 21. شغّل:
 
 ```bash
-./gradlew assembleDebug
+./gradlew assembleDebug testDebugUnitTest
 ```
 
-المتطلبات: Android SDK 36 وJDK 21. لا تضع مفاتيح API أو ملفات التوقيع الخاصة في المستودع. استخدم `.env.example` كمرجع لإعداد مفاتيح التطوير محليًا عند الحاجة.
+لا ترفع مفاتيح API أو ملفات التوقيع الخاصة أو ملف `debug.keystore` إلى المستودع.

@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,10 +22,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.DirectionsBus
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Fastfood
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.NightlightRound
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Payments
@@ -60,23 +64,34 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.TransactionEntity
 import com.example.ui.MasrofiUiState
+import com.example.ui.components.BackupRestoreModal
 import com.example.ui.components.ConfirmationDialog
 import com.example.ui.components.CycleSettingsModal
+import com.example.ui.components.EditExpenseDialog
+import com.example.ui.components.RollbackExpenseDialog
+import com.example.ui.components.WhatsNewDialog
 import com.example.ui.theme.*
+import java.util.Locale
 
 @Composable
 fun HomeScreen(
     uiState: MasrofiUiState,
-    onRollbackExpense: (Int) -> Unit,
+    onRollbackExpense: (Int, String) -> Unit,
+    onUpdateExpense: (Int, String, Double, String) -> Unit,
     onEndDay: () -> Unit,
     onToggleInstituteDay: (Boolean) -> Unit,
-    onResetCycle: (Double, Int, Double) -> Unit,
+    onResetCycle: (Double, Int, String, Double) -> Unit,
     onOpenAppearanceModal: () -> Unit,
+    onExportBackup: ((String) -> Unit) -> Unit,
+    onImportBackup: (String, (Boolean) -> Unit) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showEndDayConfirm by remember { mutableStateOf(false) }
     var showCycleModal by remember { mutableStateOf(false) }
+    var showWhatsNewModal by remember { mutableStateOf(false) }
+    var showBackupModal by remember { mutableStateOf(false) }
     var transactionToDelete by remember { mutableStateOf<TransactionEntity?>(null) }
+    var transactionToEdit by remember { mutableStateOf<TransactionEntity?>(null) }
 
     val appState = uiState.appState
     val burnRate = uiState.burnRatePercentage
@@ -88,7 +103,6 @@ fun HomeScreen(
     val cardShape = RoundedCornerShape(cornerRadius)
     val smallShape = RoundedCornerShape((cornerRadius.value * 0.6f).toInt().coerceAtLeast(3).dp)
 
-    // Dynamic pocket cash card background brush
     val pocketCardBrush = when (currentTheme) {
         ThemeMode.PURE_LIGHT -> Brush.linearGradient(
             listOf(Color(0xFFFFFFFF), Color(0xFFF0F9FF), Color(0xFFE0F2FE))
@@ -104,7 +118,6 @@ fun HomeScreen(
         )
     }
 
-    // Burn rate color coding
     val burnRateColor by animateColorAsState(
         targetValue = when {
             burnRate <= 0.60f -> if (currentTheme == ThemeMode.PURE_LIGHT) LightSecondary else NeonEmerald
@@ -126,7 +139,7 @@ fun HomeScreen(
         contentPadding = PaddingValues(top = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // App Header
+        // App Header with Version 1.1 Badge & Actions
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -152,35 +165,73 @@ fun HomeScreen(
                             modifier = Modifier.size(26.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "مصروفي",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            // Version 1.1 Badge
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+                                modifier = Modifier.clickable { showWhatsNewModal = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "جديد · الإصدار 1.1",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
                         Text(
-                            text = "مصروفي",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Text(
-                            text = "نظام إدارة الميزانية الذكي",
+                            text = "نظام إدارة الميزانية والعمل الحر",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
-                // Action buttons: Themes/Appearance & Cycle settings
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Action buttons: Backup, Appearance, Cycle
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    IconButton(
+                        onClick = { showBackupModal = true },
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant, smallShape)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, smallShape)
+                            .size(38.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Backup,
+                            contentDescription = "النسخ الاحتياطي",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
                     IconButton(
                         onClick = onOpenAppearanceModal,
                         modifier = Modifier
                             .background(MaterialTheme.colorScheme.surfaceVariant, smallShape)
                             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, smallShape)
-                            .testTag("appearance_settings_btn")
+                            .size(38.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Palette,
-                            contentDescription = "مظهر التطبيق والثيمات",
-                            tint = MaterialTheme.colorScheme.primary
+                            contentDescription = "مظهر التطبيق",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
 
@@ -189,48 +240,71 @@ fun HomeScreen(
                         modifier = Modifier
                             .background(MaterialTheme.colorScheme.surfaceVariant, smallShape)
                             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, smallShape)
-                            .testTag("cycle_settings_btn")
+                            .size(38.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Tune,
                             contentDescription = "إعداد الدورة",
-                            tint = MaterialTheme.colorScheme.primary
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
             }
         }
 
-        // External expenses isolation rule banner
+        // What's New Mini Banner
         item {
             Surface(
                 shape = cardShape,
                 color = MaterialTheme.colorScheme.surface,
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showWhatsNewModal = true }
             ) {
                 Row(
                     modifier = Modifier.padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "قاعدة المصاريف الخارجية",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.NewReleases,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "ما الجديد في التحديث 1.1؟",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "استرداد متعدد المصادر، حجز المواصلات الفعلي، وحماية إغلاق اليوم",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
                     Text(
-                        text = "عزل تام: إيجار السكن وباقة الهاتف المدفوعة من الأسرة لا تسجل هنا ومحمية خارج حسابات كاش الجيب.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 18.sp
+                        text = "عرض التفاصيل ←",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
         }
 
-        // 1. Primary Card: Pocket Cash (Adapts dynamically to theme and corner style)
+        // 1. Primary Card: Pocket Cash
         item {
             Card(
                 shape = cardShape,
@@ -280,7 +354,7 @@ fun HomeScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = String.format("%.1f", appState.pocketCash),
+                                text = String.format(Locale.US, "%.1f", appState.pocketCash),
                                 fontSize = 38.sp,
                                 fontWeight = FontWeight.Black,
                                 color = MaterialTheme.colorScheme.primary,
@@ -318,7 +392,7 @@ fun HomeScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
-                                        text = "${String.format("%.1f", allowance)} ج.م",
+                                        text = "${String.format(Locale.US, "%.1f", allowance)} ج.م",
                                         fontSize = 17.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -332,7 +406,7 @@ fun HomeScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
-                                        text = "${(burnRate * 100).toInt()}% (${String.format("%.1f", spentToday)} ج.م)",
+                                        text = "${(burnRate * 100).toInt()}% (${String.format(Locale.US, "%.1f", spentToday)} ج.م)",
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = burnRateColor
@@ -357,9 +431,9 @@ fun HomeScreen(
 
                             Text(
                                 text = if (spentToday > allowance)
-                                    "🚨 تجاوزت المسموح اليومي بمقدار ${String.format("%.1f", spentToday - allowance)} ج.م (تفعيل شلال الخصم)!"
+                                    "🚨 تجاوزت المسموح اليومي بمقدار ${String.format(Locale.US, "%.1f", spentToday - allowance)} ج.م (تفعيل شلال الخصم)!"
                                 else
-                                    "متبقي لك اليوم: ${String.format("%.1f", uiState.remainingTodayAllowance)} ج.م",
+                                    "متبقي لك اليوم: ${String.format(Locale.US, "%.1f", uiState.remainingTodayAllowance)} ج.م",
                                 fontSize = 11.sp,
                                 color = if (spentToday > allowance) MaterialTheme.colorScheme.error else burnRateColor,
                                 fontWeight = FontWeight.SemiBold
@@ -381,9 +455,7 @@ fun HomeScreen(
                     shape = cardShape,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f)),
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("splurge_pool_card")
+                    modifier = Modifier.weight(1f).testTag("splurge_pool_card")
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(
@@ -392,7 +464,7 @@ fun HomeScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Fastfood,
-                                contentDescription = "الوجبة الغالية",
+                                contentDescription = null,
                                 tint = MaterialTheme.colorScheme.secondary,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -405,7 +477,7 @@ fun HomeScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "${String.format("%.1f", appState.splurgePool)} ج.م",
+                            text = "${String.format(Locale.US, "%.1f", appState.splurgePool)} ج.م",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.secondary
@@ -425,9 +497,7 @@ fun HomeScreen(
                     shape = cardShape,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f)),
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("vault_card")
+                    modifier = Modifier.weight(1f).testTag("vault_card")
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(
@@ -436,7 +506,7 @@ fun HomeScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Lock,
-                                contentDescription = "التوفير الإجباري",
+                                contentDescription = null,
                                 tint = MaterialTheme.colorScheme.tertiary,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -449,14 +519,14 @@ fun HomeScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "${String.format("%.1f", appState.vault)} ج.م",
+                            text = "${String.format(Locale.US, "%.1f", appState.vault)} ج.م",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.tertiary
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "مجمد للطوارئ ولا يمس إلا عند النفاد",
+                            text = if (appState.savingsType == "fixed") "مبلغ ثابت: ${appState.savingsValue.toInt()} ج.م" else "نسبة مجمدة: ${appState.savingsValue}%",
                             fontSize = 10.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 14.sp
@@ -466,7 +536,7 @@ fun HomeScreen(
             }
         }
 
-        // 3. Institute Day Switch (حجز المواصلات 40 ج.م)
+        // 3. Institute Day Card (Real 40 EGP Transport Reservation)
         item {
             Card(
                 shape = cardShape,
@@ -475,9 +545,7 @@ fun HomeScreen(
                     1.dp,
                     if (appState.isInstituteDay == 1) InstituteBlue else MaterialTheme.colorScheme.outlineVariant
                 ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("institute_day_card")
+                modifier = Modifier.fillMaxWidth().testTag("institute_day_card")
             ) {
                 Row(
                     modifier = Modifier
@@ -512,7 +580,7 @@ fun HomeScreen(
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "يوم المعهد",
+                                    text = "يوم المعهد (حجز مواصلات فعلي)",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -524,7 +592,7 @@ fun HomeScreen(
                                         color = InstituteBlue.copy(alpha = 0.15f)
                                     ) {
                                         Text(
-                                            text = "مفعل",
+                                            text = "متبقي: ${appState.transportReserve.toInt()} ج.م",
                                             color = InstituteBlue,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
@@ -534,7 +602,10 @@ fun HomeScreen(
                                 }
                             }
                             Text(
-                                text = "حجز 40 ج.م مواصلات المعهد خارج ميزانية الأكل والشرب",
+                                text = if (appState.isInstituteDay == 1)
+                                    "يُخصم تلقائياً من الـ 40 ج.م عند تسجيل أي مواصلات دون مساس بالأكل"
+                                else
+                                    "تفعيل حجز 40 ج.م للمواصلات خارج ميزانية الطعام والشراب",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -556,13 +627,18 @@ fun HomeScreen(
             }
         }
 
-        // 4. End Day Button (إنهاء اليوم الآن وترحيل الفائض)
+        // 4. End Day Button (Protected against multiple closings per day)
         item {
             Button(
-                onClick = { showEndDayConfirm = true },
+                onClick = {
+                    if (uiState.canEndDayToday) {
+                        showEndDayConfirm = true
+                    }
+                },
+                enabled = uiState.canEndDayToday,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.primary
+                    containerColor = if (uiState.canEndDayToday) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    contentColor = if (uiState.canEndDayToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                 ),
                 shape = cardShape,
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -574,12 +650,14 @@ fun HomeScreen(
                 Icon(
                     imageVector = Icons.Default.NightlightRound,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "إنهاء اليوم الآن (ترحيل الفائض للحصالة)",
+                    text = if (uiState.canEndDayToday)
+                        "إنهاء اليوم الآن (ترحيل الفائض للحصالة)"
+                    else
+                        "اليوم أُغلق بالفعل مسبقاً (تم ترحيل فائضه)",
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
                 )
@@ -643,6 +721,7 @@ fun HomeScreen(
             ) { tx ->
                 TransactionCard(
                     transaction = tx,
+                    onEditClick = { transactionToEdit = tx },
                     onDeleteClick = { transactionToDelete = tx }
                 )
             }
@@ -654,8 +733,8 @@ fun HomeScreen(
         val allowanceVal = uiState.dailyAllowance
         val surplusVal = kotlin.math.max(0.0, allowanceVal - appState.todaySpent)
         ConfirmationDialog(
-            title = "تأكيد إنهاء اليوم",
-            message = "هل أنت متأكد من إنهاء اليوم الآن؟\nسيتم إنقاص أيام الدورة بمقدار 1 وترحيل الفائض (${String.format("%.1f", surplusVal)} ج.م) بالكامل إلى حصالة الوجبة الغالية.",
+            title = "تأكيد إنهاء وإغلاق اليوم",
+            message = "هل أنت متأكد من إنهاء اليوم الآن؟\nسيتم إنقاص أيام الدورة بمقدار 1 وترحيل الفائض (${String.format(Locale.US, "%.1f", surplusVal)} ج.م) لحصالة الوجبة الغالية.\n\nتنبيه: لا يمكن إغلاق اليوم أكثر من مرة في نفس التاريخ.",
             confirmText = "إنهاء وترحيل",
             cancelText = "تراجع",
             onConfirm = { onEndDay() },
@@ -663,19 +742,28 @@ fun HomeScreen(
         )
     }
 
-    // Confirmation dialog before deleting an expense (Rollback)
+    // Rollback / Deletion Dialog with breakdown
     transactionToDelete?.let { tx ->
-        ConfirmationDialog(
-            title = "تأكيد حذف المصروف والتراجع",
-            message = "هل تريد حذف '${tx.title}' بمبلغ ${tx.amount} ج.م؟\nسيتم استرداد المبلغ فوراً إلى كاش الجيب وتعديل مصاريف اليوم.",
-            confirmText = "استرداد وحذف",
-            cancelText = "إلغاء",
-            isDestructive = true,
-            onConfirm = {
-                onRollbackExpense(tx.id)
+        RollbackExpenseDialog(
+            transaction = tx,
+            onConfirm = { legacyDest ->
+                onRollbackExpense(tx.id, legacyDest)
                 transactionToDelete = null
             },
             onDismiss = { transactionToDelete = null }
+        )
+    }
+
+    // Edit Expense Dialog
+    transactionToEdit?.let { tx ->
+        EditExpenseDialog(
+            transaction = tx,
+            categories = uiState.categories,
+            onSave = { newTitle, newAmount, newCategory ->
+                onUpdateExpense(tx.id, newTitle, newAmount, newCategory)
+                transactionToEdit = null
+            },
+            onDismiss = { transactionToEdit = null }
         )
     }
 
@@ -683,9 +771,23 @@ fun HomeScreen(
     if (showCycleModal) {
         CycleSettingsModal(
             onDismiss = { showCycleModal = false },
-            onSave = { total, days, vaultPct ->
-                onResetCycle(total, days, vaultPct)
+            onSave = { total, days, savingsType, savingsValue ->
+                onResetCycle(total, days, savingsType, savingsValue)
             }
+        )
+    }
+
+    // What's New Dialog
+    if (showWhatsNewModal) {
+        WhatsNewDialog(onDismiss = { showWhatsNewModal = false })
+    }
+
+    // Backup & Restore Modal
+    if (showBackupModal) {
+        BackupRestoreModal(
+            onExport = onExportBackup,
+            onImport = onImportBackup,
+            onDismiss = { showBackupModal = false }
         )
     }
 }
@@ -693,6 +795,7 @@ fun HomeScreen(
 @Composable
 fun TransactionCard(
     transaction: TransactionEntity,
+    onEditClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
     val cornerRadius = LocalAppCornerRadius.current
@@ -786,25 +889,35 @@ fun TransactionCard(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "-${String.format("%.1f", transaction.amount)} ج.م",
+                    text = "-${transaction.amount.toInt()} ج.م",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.error
                 )
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+
+                IconButton(
+                    onClick = onEditClick,
+                    modifier = Modifier.size(32.dp).testTag("edit_tx_btn_${transaction.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "تعديل المصروف",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
 
                 IconButton(
                     onClick = onDeleteClick,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .testTag("delete_tx_btn_${transaction.id}")
+                    modifier = Modifier.size(32.dp).testTag("delete_tx_btn_${transaction.id}")
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Delete,
                         contentDescription = "حذف واسترداد",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }

@@ -212,13 +212,14 @@ fun MasrofiApp(
             when (selectedTabIndex) {
                 0 -> HomeScreen(
                     uiState = uiState,
-                    onRollbackExpense = { viewModel.rollbackExpense(it) },
+                    onRollbackExpense = { id, dest -> viewModel.rollbackExpense(id, dest) },
+                    onUpdateExpense = { id, title, amount, category -> viewModel.updateExpense(id, title, amount, category) },
                     onEndDay = { viewModel.endDayNow() },
                     onToggleInstituteDay = { viewModel.toggleInstituteDay(it) },
-                    onResetCycle = { total, days, vaultPct ->
-                        viewModel.resetCycle(total, days, vaultPct)
-                    },
-                    onOpenAppearanceModal = onOpenAppearanceModal
+                    onResetCycle = { total, days, type, value -> viewModel.resetCycle(total, days, type, value) },
+                    onOpenAppearanceModal = onOpenAppearanceModal,
+                    onExportBackup = { callback -> viewModel.exportBackup(callback) },
+                    onImportBackup = { json, callback -> viewModel.importBackup(json, callback) }
                 )
 
                 1 -> AddExpenseScreen(
@@ -226,6 +227,12 @@ fun MasrofiApp(
                     onRecordExpense = { title, amount, category, isYesterday ->
                         viewModel.recordExpense(title, amount, category, isYesterday)
                         selectedTabIndex = 0
+                    },
+                    onAddCategory = { name, emoji, limit ->
+                        viewModel.addCategory(name, emoji, limit)
+                    },
+                    onDeleteCategory = { id ->
+                        viewModel.deleteCategory(id)
                     }
                 )
 
@@ -243,6 +250,12 @@ fun MasrofiApp(
                     },
                     onSettleDebt = { debtId ->
                         viewModel.settleDebt(debtId)
+                    },
+                    onSetPeriod = { period ->
+                        viewModel.setReportPeriod(period)
+                    },
+                    onUpdateReminders = { daily, threshold, category ->
+                        viewModel.updateReminderSettings(daily, threshold, category)
                     }
                 )
             }

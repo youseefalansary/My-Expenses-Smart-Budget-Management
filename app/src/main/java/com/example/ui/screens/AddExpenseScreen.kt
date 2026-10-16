@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.RemoveCircle
@@ -40,6 +42,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,12 +56,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.MasrofiUiState
+import com.example.ui.components.CategoryManagementModal
 import com.example.ui.components.ConfirmationDialog
 import com.example.ui.theme.*
 
 data class QuickExpenseItem(
     val title: String,
-    val amount: Double,
+    val amount: Int,
     val category: String,
     val emoji: String
 )
@@ -68,6 +72,8 @@ data class QuickExpenseItem(
 fun AddExpenseScreen(
     uiState: MasrofiUiState,
     onRecordExpense: (title: String, amount: Double, category: String, isYesterday: Boolean) -> Unit,
+    onAddCategory: (String, String, Double) -> Unit,
+    onDeleteCategory: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var title by remember { mutableStateOf("") }
@@ -75,23 +81,23 @@ fun AddExpenseScreen(
     var selectedCategory by remember { mutableStateOf("طعام ومشروبات") }
     var isYesterdayExpense by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
+    var showCategoryModal by remember { mutableStateOf(false) }
+    var amountError by remember { mutableStateOf<String?>(null) }
 
     val cornerRadius = LocalAppCornerRadius.current
     val cardShape = RoundedCornerShape(cornerRadius)
     val smallShape = RoundedCornerShape((cornerRadius.value * 0.6f).toInt().coerceAtLeast(3).dp)
 
-    val categories = listOf("طعام ومشروبات", "مواصلات", "علاج", "شخصي")
-
     val quickItems = listOf(
-        QuickExpenseItem("دليفري", 15.0, "طعام ومشروبات", "🛵"),
-        QuickExpenseItem("كانز", 15.0, "طعام ومشروبات", "🥤"),
-        QuickExpenseItem("مواصلات", 10.0, "مواصلات", "🚌"),
-        QuickExpenseItem("قهوة", 12.0, "طعام ومشروبات", "☕"),
-        QuickExpenseItem("ساندوتش", 25.0, "طعام ومشروبات", "🥪"),
-        QuickExpenseItem("مياه", 7.0, "طعام ومشروبات", "💧")
+        QuickExpenseItem("دليفري", 15, "طعام ومشروبات", "🛵"),
+        QuickExpenseItem("كانز", 15, "طعام ومشروبات", "🥤"),
+        QuickExpenseItem("مواصلات", 10, "مواصلات", "🚌"),
+        QuickExpenseItem("قهوة", 12, "طعام ومشروبات", "☕"),
+        QuickExpenseItem("ساندوتش", 25, "طعام ومشروبات", "🥪"),
+        QuickExpenseItem("مياه", 7, "طعام ومشروبات", "💧")
     )
 
-    val currentAmount = amountText.toDoubleOrNull() ?: 0.0
+    val parsedAmount = amountText.toDoubleOrNull() ?: 0.0
 
     // Dynamic waterfall calculation prediction
     val allowance = uiState.dailyAllowance
@@ -99,28 +105,39 @@ fun AddExpenseScreen(
     val splurge = uiState.appState.splurgePool
     val pocket = uiState.appState.pocketCash
     val vault = uiState.appState.vault
+    val transportReserve = uiState.appState.transportReserve
+    val isInstituteDay = uiState.appState.isInstituteDay == 1
 
-    val waterfallExplanation = remember(currentAmount, isYesterdayExpense, allowance, remainingToday, splurge, pocket, vault) {
-        if (currentAmount <= 0) {
+    val waterfallExplanation = remember(parsedAmount, isYesterdayExpense, allowance, remainingToday, splurge, pocket, vault, selectedCategory, transportReserve, isInstituteDay) {
+        if (parsedAmount <= 0) {
             "أدخل المبلغ لمعاينة مسار الخصم عبر الشلال المالي الصارم."
         } else if (isYesterdayExpense) {
-            if (splurge >= currentAmount) {
-                "سحب كامل من حصالة الوجبة الغالية (${currentAmount} ج.م) دون المساس بميزانية اليوم!"
+            if (splurge >= parsedAmount) {
+                "سحب كامل من حصالة الوجبة الغالية (${parsedAmount.toInt()} ج.م) دون المساس بميزانية اليوم!"
             } else {
                 val fromSplurge = splurge
-                val fromPocket = currentAmount - fromSplurge
-                "سحب ${fromSplurge} ج.م من حصالة الوجبة الغالية + ${fromPocket} ج.م من كاش الجيب دون المساس بميزانية اليوم."
+                val fromPocket = parsedAmount - fromSplurge
+                "سحب ${fromSplurge.toInt()} ج.م من حصالة الوجبة الغالية + ${fromPocket.toInt()} ج.م من كاش الجيب دون المساس بميزانية اليوم."
             }
         } else {
-            if (currentAmount <= remainingToday) {
-                "ضمن المسموح اليومي: سيخصم المبلغ بالكامل (${currentAmount} ج.م) من ميزانية اليوم وكاش الجيب."
+            // Check institute day transport reserve
+            if (selectedCategory == "مواصلات" && isInstituteDay && transportReserve > 0) {
+                if (transportReserve >= parsedAmount) {
+                    "يُخصم كامل المبلغ (${parsedAmount.toInt()} ج.م) من محجوز مواصلات المعهد المحمي دون استهلاك ميزانية الأكل والشرب."
+                } else {
+                    val fromTrans = transportReserve
+                    val rem = parsedAmount - fromTrans
+                    "يُخصم ${fromTrans.toInt()} ج.م من محجوز المواصلات، والمتبقي (${rem.toInt()} ج.م) يخضع لميزانية اليوم والشلال."
+                }
+            } else if (parsedAmount <= remainingToday) {
+                "ضمن المسموح اليومي: سيخصم المبلغ بالكامل (${parsedAmount.toInt()} ج.م) من ميزانية اليوم وكاش الجيب."
             } else {
-                val deficit = currentAmount - remainingToday
+                val deficit = parsedAmount - remainingToday
                 if (splurge >= deficit) {
-                    "تجاوز للمسموح اليومي: سيغطى العجز (${deficit} ج.م) أولاً من حصالة الوجبة الغالية."
+                    "تجاوز للمسموح اليومي: سيغطى العجز (${deficit.toInt()} ج.م) أولاً من حصالة الوجبة الغالية."
                 } else if (splurge + pocket >= deficit) {
                     val remDef = deficit - splurge
-                    "تجاوز للمسموح وحصالة الوجبة: سيخصم ${splurge} ج.م من الحصالة و ${remDef} ج.م من كاش الجيب مباشرة (يقلل ميزانية الأيام المتبقية)."
+                    "تجاوز للمسموح وحصالة الوجبة: سيخصم ${splurge.toInt()} ج.م من الحصالة و ${remDef.toInt()} ج.م من كاش الجيب مباشرة."
                 } else {
                     "⚠️ تحذير: سينفد كاش الجيب وسيبدأ الخصم من التوفير الإجباري المجمد!"
                 }
@@ -143,7 +160,7 @@ fun AddExpenseScreen(
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                text = "سجل مصروفاتك لتطبيق شلال الخصم الفوري التلقائي",
+                text = "سجل مصروفاتك بأعداد صحيحة لتطبيق شلال الخصم الفوري التلقائي",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -178,8 +195,9 @@ fun AddExpenseScreen(
                                 modifier = Modifier
                                     .clickable {
                                         title = item.title
-                                        amountText = item.amount.toInt().toString()
+                                        amountText = item.amount.toString()
                                         selectedCategory = item.category
+                                        amountError = null
                                     }
                                     .testTag("quick_chip_${item.title}")
                             ) {
@@ -190,7 +208,7 @@ fun AddExpenseScreen(
                                     Text(item.emoji, fontSize = 14.sp)
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "${item.title} +${item.amount.toInt()}",
+                                        text = "${item.title} +${item.amount}",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -226,20 +244,22 @@ fun AddExpenseScreen(
                             unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                         ),
                         shape = smallShape,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("expense_title_input")
+                        modifier = Modifier.fillMaxWidth().testTag("expense_title_input")
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Amount Input
+                    // Amount Input (with integer validation)
                     OutlinedTextField(
                         value = amountText,
-                        onValueChange = { amountText = it },
-                        label = { Text("المبلغ (ج.م)") },
+                        onValueChange = { input ->
+                            amountText = input
+                            amountError = null
+                        },
+                        label = { Text("المبلغ (أعداد صحيحة بالجنيه فقط)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
+                        isError = amountError != null,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = MaterialTheme.colorScheme.primary,
                             unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
@@ -247,32 +267,52 @@ fun AddExpenseScreen(
                             unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                         ),
                         shape = smallShape,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("expense_amount_input")
+                        modifier = Modifier.fillMaxWidth().testTag("expense_amount_input")
                     )
+
+                    amountError?.let { err ->
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(err, color = MaterialTheme.colorScheme.error, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Category Selection Chips
-                    Text(
-                        text = "التصنيف:",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    // Category Selection Chips (with dynamic custom categories & Manage button)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        categories.forEach { cat ->
+                        Text(
+                            text = "التصنيف:",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        TextButton(
+                            onClick = { showCategoryModal = true },
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Icon(Icons.Default.Category, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("إدارة التصنيفات", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        uiState.categories.forEach { cat ->
                             FilterChip(
-                                selected = selectedCategory == cat,
-                                onClick = { selectedCategory = cat },
+                                selected = selectedCategory == cat.name,
+                                onClick = { selectedCategory = cat.name },
                                 label = {
                                     Text(
-                                        text = cat,
+                                        text = "${cat.emoji} ${cat.name}",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -284,9 +324,7 @@ fun AddExpenseScreen(
                                     labelColor = MaterialTheme.colorScheme.onSurfaceVariant
                                 ),
                                 shape = smallShape,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("cat_chip_$cat")
+                                modifier = Modifier.testTag("cat_chip_${cat.name}")
                             )
                         }
                     }
@@ -326,7 +364,7 @@ fun AddExpenseScreen(
                                         color = if (isYesterdayExpense) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "لا يمس ميزانية اليوم الحالية نهائياً ويخصم من الحصالة/الكاش",
+                                        text = "لا يمس ميزانية اليوم الحالية ويخصم من الحصالة/الكاش",
                                         fontSize = 10.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -355,7 +393,7 @@ fun AddExpenseScreen(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         border = androidx.compose.foundation.BorderStroke(
                             1.dp,
-                            if (currentAmount > remainingToday && !isYesterdayExpense) MaterialTheme.colorScheme.error.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant
+                            if (parsedAmount > remainingToday && !isYesterdayExpense) MaterialTheme.colorScheme.error.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant
                         ),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -364,9 +402,9 @@ fun AddExpenseScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = if (currentAmount > remainingToday && !isYesterdayExpense) Icons.Default.Warning else Icons.Default.Info,
+                                imageVector = if (parsedAmount > remainingToday && !isYesterdayExpense) Icons.Default.Warning else Icons.Default.Info,
                                 contentDescription = null,
-                                tint = if (currentAmount > remainingToday && !isYesterdayExpense) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                tint = if (parsedAmount > remainingToday && !isYesterdayExpense) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -381,14 +419,29 @@ fun AddExpenseScreen(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Submit Button
+                    // Submit Button with Strict Whole Number Validation
                     Button(
                         onClick = {
-                            if (currentAmount > 0) {
-                                showConfirmDialog = true
+                            val trimmed = amountText.trim()
+                            if (trimmed.isEmpty()) {
+                                amountError = "يرجى إدخال مبلغ المصروف"
+                                return@Button
                             }
+                            if (trimmed.contains(".") || trimmed.contains(",")) {
+                                val parts = trimmed.split('.', ',')
+                                if (parts.size > 1 && parts[1].any { it != '0' }) {
+                                    amountError = "مبالغ المصروفات يجب أن تكون أعداداً صحيحة بالجنيه دون قروش (مثال: 12 أو 15 جنيه)"
+                                    return@Button
+                                }
+                            }
+                            val num = trimmed.toDoubleOrNull()
+                            if (num == null || num <= 0) {
+                                amountError = "المبلغ يجب أن يكون رقماً صحيحاً أكبر من صفر"
+                                return@Button
+                            }
+                            showConfirmDialog = true
                         },
-                        enabled = currentAmount > 0,
+                        enabled = parsedAmount > 0,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error,
                             contentColor = MaterialTheme.colorScheme.onError,
@@ -396,10 +449,7 @@ fun AddExpenseScreen(
                             disabledContentColor = MaterialTheme.colorScheme.outline
                         ),
                         shape = smallShape,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp)
-                            .testTag("submit_expense_btn")
+                        modifier = Modifier.fillMaxWidth().height(50.dp).testTag("submit_expense_btn")
                     ) {
                         Icon(
                             imageVector = Icons.Default.RemoveCircle,
@@ -408,7 +458,7 @@ fun AddExpenseScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "تسجيل خصم المصروف (${if (currentAmount > 0) "$currentAmount ج.م" else ""})",
+                            text = "تسجيل خصم المصروف (${if (parsedAmount > 0) "${parsedAmount.toInt()} ج.م" else ""})",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
@@ -418,21 +468,31 @@ fun AddExpenseScreen(
         }
     }
 
-    // Mandatory Confirmation Dialog before recording expense
+    // Confirmation Dialog before recording expense
     if (showConfirmDialog) {
         val finalTitle = title.ifBlank { "مصروف $selectedCategory" }
         ConfirmationDialog(
             title = "تأكيد خصم المصروف",
-            message = "هل تريد تأكيد خصم مبلغ $currentAmount ج.م لـ '$finalTitle'؟\nسيتم تطبيق شلال الخصم الفوري وتحديث كاش الجيب.",
+            message = "هل تريد تأكيد خصم مبلغ ${parsedAmount.toInt()} ج.م لـ '$finalTitle'؟\nسيتم تطبيق شلال الخصم الفوري وتحديث كاش الجيب.",
             confirmText = "تأكيد الخصم",
             cancelText = "مراجعة",
             onConfirm = {
-                onRecordExpense(finalTitle, currentAmount, selectedCategory, isYesterdayExpense)
+                onRecordExpense(finalTitle, parsedAmount, selectedCategory, isYesterdayExpense)
                 title = ""
                 amountText = ""
                 isYesterdayExpense = false
             },
             onDismiss = { showConfirmDialog = false }
+        )
+    }
+
+    // Category Management Dialog
+    if (showCategoryModal) {
+        CategoryManagementModal(
+            categories = uiState.categories,
+            onAddCategory = onAddCategory,
+            onDeleteCategory = onDeleteCategory,
+            onDismiss = { showCategoryModal = false }
         )
     }
 }

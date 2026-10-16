@@ -1,11 +1,14 @@
 package com.example.data
 
 import kotlinx.coroutines.flow.Flow
+import org.json.JSONArray
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.round
 
 data class ExpenseResult(
     val success: Boolean,
@@ -13,64 +16,133 @@ data class ExpenseResult(
     val message: String
 )
 
+data class EndDayResult(
+    val success: Boolean,
+    val surplus: Double,
+    val message: String
+)
+
 class MasrofiRepository(
     private val appStateDao: AppStateDao,
     private val transactionDao: TransactionDao,
     private val workHistoryDao: WorkHistoryDao,
-    private val debtDao: DebtDao
+    private val debtDao: DebtDao,
+    private val categoryDao: CategoryDao
 ) {
     val appState: Flow<AppStateEntity?> = appStateDao.getAppState()
     val allTransactions: Flow<List<TransactionEntity>> = transactionDao.getAllTransactions()
     val recentTransactions: Flow<List<TransactionEntity>> = transactionDao.getRecentTransactions(20)
     val workHistory: Flow<List<WorkHistoryEntity>> = workHistoryDao.getAll()
     val debts: Flow<List<DebtEntity>> = debtDao.getAll()
+    val categories: Flow<List<CategoryEntity>> = categoryDao.getAllCategories()
 
-    private fun getTodayDateStr(): String {
+    fun getTodayDateStr(): String {
         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         return sdf.format(Date())
     }
 
-    private fun getCurrentTimeStr(): String {
+    fun getCurrentTimeStr(): String {
         val sdf = SimpleDateFormat("hh:mm a", Locale("ar"))
         return sdf.format(Date())
     }
 
     suspend fun getOrCreateAppState(): AppStateEntity {
         var state = appStateDao.getAppStateSync()
+        val today = getTodayDateStr()
         if (state == null) {
             state = AppStateEntity(
                 id = 1,
-                pocketCash = 1800.0,
-                vault = 600.0,
-                splurgePool = 120.0,
+                pocketCash = 1600.0,
+                vault = 400.0,
+                splurgePool = 0.0,
                 daysLeft = 30,
                 todaySpent = 0.0,
                 isInstituteDay = 0,
-                lastProcessedDate = getTodayDateStr(),
-                workTotal = 0.0
+                lastProcessedDate = today,
+                workTotal = 0.0,
+                lastClosedDate = "",
+                transportReserve = 0.0,
+                savingsType = "percentage",
+                savingsValue = 20.0,
+                totalReceived = 2000.0,
+                dailyReminderEnabled = 0,
+                thresholdAlertEnabled = 0,
+                categoryAlertEnabled = 0
             )
             appStateDao.insertOrUpdate(state)
         }
+
+        // Initialize default categories if empty
+        val existingCats = categoryDao.getAllCategoriesSync()
+        if (existingCats.isEmpty()) {
+            categoryDao.insertAll(
+                listOf(
+                    CategoryEntity(name = "طعام ومشروبات", emoji = "🍔", budgetLimit = 0.0, isDefault = 1),
+                    CategoryEntity(name = "مواصلات", emoji = "🚌", budgetLimit = 0.0, isDefault = 1),
+                    CategoryEntity(name = "علاج", emoji = "💊", budgetLimit = 0.0, isDefault = 1),
+                    CategoryEntity(name = "شخصي", emoji = "🛍️", budgetLimit = 0.0, isDefault = 1)
+                )
+            )
+        }
+
         return state
     }
 
     suspend fun checkAndPerformMidnightRollover(): Boolean {
         val state = getOrCreateAppState()
         val today = getTodayDateStr()
+
         if (state.lastProcessedDate.isNotEmpty() && state.lastProcessedDate != today) {
-            performDayRolloverInternal(state, today)
+            // Check if the previous day was already manually closed
+            val wasAlreadyClosed = (state.lastClosedDate == state.lastProcessedDate)
+
+            if (wasAlreadyClosed) {
+                // Already closed manually: simply update lastProcessedDate and reset today's spent
+                appStateDao.insertOrUpdate(
+                    state.copy(
+                        lastProcessedDate = today,
+                        todaySpent = 0.0,
+                        isInstituteDay = 0,
+                        transportReserve = 0.0
+                    )
+                )
+            } else {
+                // Not closed yet: close previous day once, transfer surplus and decrement daysLeft
+                val allowance = if (state.daysLeft > 0) state.pocketCash / state.daysLeft else 0.0
+                val surplus = max(0.0, allowance - state.todaySpent)
+                val newSplurge = state.splurgePool + surplus
+                val newDaysLeft = max(0, state.daysLeft - 1)
+
+                appStateDao.insertOrUpdate(
+                    state.copy(
+                        splurgePool = newSplurge,
+                        daysLeft = newDaysLeft,
+                        todaySpent = 0.0,
+                        isInstituteDay = 0,
+                        transportReserve = 0.0,
+                        lastClosedDate = state.lastProcessedDate,
+                        lastProcessedDate = today
+                    )
+                )
+            }
             return true
         }
         return false
     }
 
-    suspend fun manualEndDay(): Double {
+    suspend fun manualEndDay(): EndDayResult {
         val state = getOrCreateAppState()
         val today = getTodayDateStr()
-        return performDayRolloverInternal(state, today)
-    }
 
-    private suspend fun performDayRolloverInternal(state: AppStateEntity, todayDate: String): Double {
+        // Requirement 2: Prevent ending day multiple times on the same date!
+        if (state.lastClosedDate == today) {
+            return EndDayResult(
+                success = false,
+                surplus = 0.0,
+                message = "لقد تم إنهاء وإغلاق هذا اليوم ($today) بالفعل مسبقاً، ولا يمكن إغلاقه مرتين في نفس التاريخ."
+            )
+        }
+
         val allowance = if (state.daysLeft > 0) state.pocketCash / state.daysLeft else 0.0
         val surplus = max(0.0, allowance - state.todaySpent)
         val newSplurge = state.splurgePool + surplus
@@ -81,15 +153,38 @@ class MasrofiRepository(
             daysLeft = newDaysLeft,
             todaySpent = 0.0,
             isInstituteDay = 0,
-            lastProcessedDate = todayDate
+            transportReserve = 0.0,
+            lastClosedDate = today,
+            lastProcessedDate = today
         )
         appStateDao.insertOrUpdate(updatedState)
-        return surplus
+
+        val msg = if (surplus > 0) {
+            "عاش! تم إنهاء اليوم بنجاح وترحيل فائض ${formatTwoDecimals(surplus)} ج.م إلى حصالة الوجبة الغالية 🎉"
+        } else {
+            "تم إنهاء اليوم وإغلاقه بنجاح، وتحديث الأيام المتبقية في الدورة."
+        }
+        return EndDayResult(true, surplus, msg)
     }
 
     suspend fun toggleInstituteDay(enabled: Boolean) {
         val state = getOrCreateAppState()
-        appStateDao.insertOrUpdate(state.copy(isInstituteDay = if (enabled) 1 else 0))
+        if (enabled) {
+            // Requirement 3: Reserve 40 EGP specifically for transportation
+            appStateDao.insertOrUpdate(
+                state.copy(
+                    isInstituteDay = 1,
+                    transportReserve = 40.0
+                )
+            )
+        } else {
+            appStateDao.insertOrUpdate(
+                state.copy(
+                    isInstituteDay = 0,
+                    transportReserve = 0.0
+                )
+            )
+        }
     }
 
     suspend fun recordExpense(
@@ -98,119 +193,193 @@ class MasrofiRepository(
         category: String,
         isYesterday: Boolean
     ): ExpenseResult {
+        // Requirement 5: Whole integers only for expenses!
         if (amount <= 0) {
             return ExpenseResult(false, false, "المبلغ يجب أن يكون أكبر من صفر")
+        }
+        if (amount != kotlin.math.floor(amount)) {
+            return ExpenseResult(
+                false,
+                false,
+                "مبالغ المصروفات يجب أن تكون أعداداً صحيحة بالجنيه دون قروش (مثال: 12 أو 15)"
+            )
         }
 
         val state = getOrCreateAppState()
         var vaultWarned = false
+
         var newPocketCash = state.pocketCash
         var newVault = state.vault
         var newSplurge = state.splurgePool
+        var newTransportReserve = state.transportReserve
         var newTodaySpent = state.todaySpent
 
-        if (isYesterday) {
-            // Forgotten expense from yesterday: DOES NOT touch today_spent!
-            // Waterfall: Splurge Pool -> Pocket Cash -> Vault
-            val fromSplurge = min(newSplurge, amount)
-            newSplurge -= fromSplurge
-            var remaining = amount - fromSplurge
+        var dedPocket = 0.0
+        var dedSplurge = 0.0
+        var dedVault = 0.0
+        var dedTransport = 0.0
 
-            if (remaining > 0) {
-                val fromPocket = min(max(0.0, newPocketCash), remaining)
+        var remainingAmount = amount
+
+        if (isYesterday) {
+            // Forgotten expense from yesterday: Waterfall: Splurge -> Pocket -> Vault
+            val fromSplurge = min(newSplurge, remainingAmount)
+            dedSplurge = fromSplurge
+            newSplurge -= fromSplurge
+            remainingAmount -= fromSplurge
+
+            if (remainingAmount > 0) {
+                val fromPocket = min(max(0.0, newPocketCash), remainingAmount)
+                dedPocket = fromPocket
                 newPocketCash -= fromPocket
-                remaining -= fromPocket
+                remainingAmount -= fromPocket
             }
 
-            if (remaining > 0) {
-                val fromVault = min(max(0.0, newVault), remaining)
+            if (remainingAmount > 0) {
+                val fromVault = min(max(0.0, newVault), remainingAmount)
+                dedVault = fromVault
                 newVault -= fromVault
-                remaining -= fromVault
+                remainingAmount -= fromVault
                 vaultWarned = true
             }
         } else {
-            // Regular today's expense: Waterfall deduction engine
-            val allowance = if (state.daysLeft > 0) state.pocketCash / state.daysLeft else 0.0
-            val remainingAllowanceToday = max(0.0, allowance - state.todaySpent)
-
-            if (amount <= remainingAllowanceToday) {
-                // Entire amount is within today's daily allowance
-                newPocketCash = max(0.0, newPocketCash - amount)
-            } else {
-                // Deficit occurred!
-                val portionWithin = remainingAllowanceToday
-                val deficit = amount - portionWithin
-
-                // Deduct portion within allowance from pocket cash
-                newPocketCash = max(0.0, newPocketCash - portionWithin)
-
-                // 1) Deficit deducted first from splurge pool
-                val fromSplurge = min(newSplurge, deficit)
-                newSplurge -= fromSplurge
-                var remDeficit = deficit - fromSplurge
-
-                // 2) If still remaining, deduct from pocket cash directly (lowers future days allowance)
-                if (remDeficit > 0) {
-                    val fromPocket = min(max(0.0, newPocketCash), remDeficit)
-                    newPocketCash -= fromPocket
-                    remDeficit -= fromPocket
-                }
-
-                // 3) If pocket cash hits 0, deduct remaining deficit from vault!
-                if (remDeficit > 0) {
-                    val fromVault = min(max(0.0, newVault), remDeficit)
-                    newVault -= fromVault
-                    remDeficit -= fromVault
-                    vaultWarned = true
-                }
+            // Requirement 3: Institute Day real transportation reserve deduction
+            if (category == "مواصلات" && state.isInstituteDay == 1 && newTransportReserve > 0) {
+                val fromTransport = min(newTransportReserve, remainingAmount)
+                dedTransport = fromTransport
+                newTransportReserve -= fromTransport
+                remainingAmount -= fromTransport
             }
-            newTodaySpent += amount
+
+            if (remainingAmount > 0) {
+                val allowance = if (state.daysLeft > 0) newPocketCash / state.daysLeft else 0.0
+                val remainingAllowanceToday = max(0.0, allowance - state.todaySpent)
+
+                if (remainingAmount <= remainingAllowanceToday) {
+                    dedPocket = remainingAmount
+                    newPocketCash = max(0.0, newPocketCash - remainingAmount)
+                } else {
+                    val portionWithin = remainingAllowanceToday
+                    dedPocket += portionWithin
+                    newPocketCash = max(0.0, newPocketCash - portionWithin)
+                    val deficit = remainingAmount - portionWithin
+
+                    // 1) From Splurge Pool
+                    val fromSplurge = min(newSplurge, deficit)
+                    dedSplurge = fromSplurge
+                    newSplurge -= fromSplurge
+                    var remDef = deficit - fromSplurge
+
+                    // 2) From Pocket Cash
+                    if (remDef > 0) {
+                        val fromPocket = min(max(0.0, newPocketCash), remDef)
+                        dedPocket += fromPocket
+                        newPocketCash -= fromPocket
+                        remDef -= fromPocket
+                    }
+
+                    // 3) From Vault
+                    if (remDef > 0) {
+                        val fromVault = min(max(0.0, newVault), remDef)
+                        dedVault = fromVault
+                        newVault -= fromVault
+                        remDef -= fromVault
+                        vaultWarned = true
+                    }
+                }
+                newTodaySpent += remainingAmount
+            }
         }
 
-        // Persist updated app state
+        // Persist AppState with updated balances
         appStateDao.insertOrUpdate(
             state.copy(
                 pocketCash = newPocketCash,
                 vault = newVault,
                 splurgePool = newSplurge,
-                todaySpent = newTodaySpent
+                todaySpent = newTodaySpent,
+                transportReserve = newTransportReserve
             )
         )
 
-        // Insert transaction record
+        // Requirement 1 & 6: Store breakdown and real timestamp
         val dateTag = if (isYesterday) "أمس" else "اليوم"
         val timeStr = getCurrentTimeStr()
+        val todayIso = getTodayDateStr()
+        val nowMillis = System.currentTimeMillis()
+
         transactionDao.insert(
             TransactionEntity(
                 title = title.ifBlank { "مصروف $category" },
                 amount = amount,
                 category = category,
                 dateTag = dateTag,
-                createdAt = timeStr
+                createdAt = timeStr,
+                deductedFromPocket = dedPocket,
+                deductedFromSplurge = dedSplurge,
+                deductedFromVault = dedVault,
+                deductedFromTransport = dedTransport,
+                dateMillis = nowMillis,
+                dateIso = todayIso
             )
         )
 
-        return ExpenseResult(
-            success = true,
-            vaultWarned = vaultWarned,
-            message = if (vaultWarned) "تم الخصم مع بدء استنزاف التوفير الإجباري!" else "تم تسجيل المصروف بنجاح"
-        )
+        val message = if (vaultWarned) {
+            "تم الخصم مع بدء استنزاف التوفير الإجباري!"
+        } else if (dedTransport > 0) {
+            "تم الخصم بنجاح (مشمولاً ${dedTransport.toInt()} ج.م من محجوز مواصلات المعهد)"
+        } else {
+            "تم تسجيل المصروف بنجاح وتحديث الأرصدة"
+        }
+
+        return ExpenseResult(success = true, vaultWarned = vaultWarned, message = message)
     }
 
-    suspend fun rollbackExpense(transactionId: Int) {
+    suspend fun rollbackExpense(transactionId: Int, legacyDestination: String = "pocket") {
         val tx = transactionDao.getById(transactionId) ?: return
         val state = getOrCreateAppState()
 
-        val newPocketCash = state.pocketCash + tx.amount
-        val newTodaySpent = if (tx.dateTag == "اليوم") {
-            max(0.0, state.todaySpent - tx.amount)
+        val isMultiOrTracked = (tx.deductedFromPocket > 0 ||
+                tx.deductedFromSplurge > 0 ||
+                tx.deductedFromVault > 0 ||
+                tx.deductedFromTransport > 0)
+
+        var newPocketCash = state.pocketCash
+        var newSplurgePool = state.splurgePool
+        var newVault = state.vault
+        var newTransportReserve = state.transportReserve
+        var newTodaySpent = state.todaySpent
+
+        if (isMultiOrTracked) {
+            // Requirement 1: Restore each part to the exact source it was deducted from!
+            newPocketCash += tx.deductedFromPocket
+            newSplurgePool += tx.deductedFromSplurge
+            newVault += tx.deductedFromVault
+            newTransportReserve += tx.deductedFromTransport
+
+            if (tx.dateTag == "اليوم") {
+                val nonTransportPortion = tx.amount - tx.deductedFromTransport
+                newTodaySpent = max(0.0, state.todaySpent - nonTransportPortion)
+            }
         } else {
-            state.todaySpent
+            // Legacy transaction fallback: return to chosen destination
+            when (legacyDestination) {
+                "splurge" -> newSplurgePool += tx.amount
+                "vault" -> newVault += tx.amount
+                else -> newPocketCash += tx.amount
+            }
+            if (tx.dateTag == "اليوم") {
+                newTodaySpent = max(0.0, state.todaySpent - tx.amount)
+            }
         }
 
+        // Safe atomic persistence
         appStateDao.insertOrUpdate(
             state.copy(
                 pocketCash = newPocketCash,
+                splurgePool = newSplurgePool,
+                vault = newVault,
+                transportReserve = newTransportReserve,
                 todaySpent = newTodaySpent
             )
         )
@@ -218,10 +387,25 @@ class MasrofiRepository(
         transactionDao.deleteById(transactionId)
     }
 
+    suspend fun updateExpense(
+        transactionId: Int,
+        newTitle: String,
+        newAmount: Double,
+        newCategory: String
+    ): ExpenseResult {
+        val tx = transactionDao.getById(transactionId) ?: return ExpenseResult(false, false, "المصروف غير موجود")
+        val isYesterday = tx.dateTag == "أمس"
+
+        // 1. Rollback previous expense safely
+        rollbackExpense(transactionId)
+
+        // 2. Re-record with new parameters
+        return recordExpense(newTitle, newAmount, newCategory, isYesterday)
+    }
+
     suspend fun depositFreelanceIncome(source: String, amount: Double) {
         if (amount <= 0) return
         val state = getOrCreateAppState()
-        // 100% goes to pocketCash, 0% cut for vault
         val updatedState = state.copy(
             pocketCash = state.pocketCash + amount,
             workTotal = state.workTotal + amount
@@ -242,8 +426,6 @@ class MasrofiRepository(
         if (amount <= 0) return
         val state = getOrCreateAppState()
 
-        // 'give' = سلّفت وخرجت من جيبي -> تخرج من pocket_cash
-        // 'take' = استلفت ودخلت جيبي -> تدخل pocket_cash
         val newPocket = if (type == "give") {
             max(0.0, state.pocketCash - amount)
         } else {
@@ -267,9 +449,6 @@ class MasrofiRepository(
         if (debt.isSettled == 1) return
 
         val state = getOrCreateAppState()
-        // When settled:
-        // If it was 'give' (سلّفت): رجعت الفلوس لجيبك -> تزيد pocket_cash
-        // If it was 'take' (استلفت): سددت الدين من جيبك -> تخصم من pocket_cash
         val newPocket = if (debt.type == "give") {
             state.pocketCash + debt.amount
         } else {
@@ -280,8 +459,22 @@ class MasrofiRepository(
         debtDao.updateSettled(debtId, 1)
     }
 
-    suspend fun resetCycle(totalReceived: Double, days: Int, vaultPercentage: Double) {
-        val vaultAmount = totalReceived * (vaultPercentage / 100.0)
+    // Requirement 4: Savings as Percentage OR Fixed Amount
+    suspend fun resetCycle(
+        totalReceived: Double,
+        days: Int,
+        savingsType: String,
+        savingsValue: Double
+    ) {
+        val vaultAmount: Double = if (savingsType == "fixed") {
+            // Fixed amount: exact value, do NOT round or convert to approximate percentage
+            min(totalReceived, max(0.0, savingsValue))
+        } else {
+            // Percentage: accurate percentage calculation, rounded to two decimal places (القرش)
+            val pct = min(100.0, max(0.0, savingsValue))
+            round((totalReceived * (pct / 100.0)) * 100.0) / 100.0
+        }
+
         val pocketAmount = max(0.0, totalReceived - vaultAmount)
         val today = getTodayDateStr()
 
@@ -293,8 +486,250 @@ class MasrofiRepository(
             daysLeft = max(1, days),
             todaySpent = 0.0,
             isInstituteDay = 0,
-            lastProcessedDate = today
+            transportReserve = 0.0,
+            lastProcessedDate = today,
+            lastClosedDate = "",
+            totalReceived = totalReceived,
+            savingsType = savingsType,
+            savingsValue = savingsValue
         )
         appStateDao.insertOrUpdate(newState)
+    }
+
+    // Categories Management
+    suspend fun addCategory(name: String, emoji: String, budgetLimit: Double) {
+        if (name.isBlank()) return
+        categoryDao.insert(
+            CategoryEntity(
+                name = name.trim(),
+                emoji = emoji.ifBlank { "📁" },
+                budgetLimit = max(0.0, budgetLimit),
+                isDefault = 0
+            )
+        )
+    }
+
+    suspend fun updateCategory(id: Int, name: String, emoji: String, budgetLimit: Double) {
+        categoryDao.update(
+            CategoryEntity(
+                id = id,
+                name = name.trim(),
+                emoji = emoji.ifBlank { "📁" },
+                budgetLimit = max(0.0, budgetLimit),
+                isDefault = 0
+            )
+        )
+    }
+
+    suspend fun deleteCategory(id: Int) {
+        categoryDao.deleteById(id)
+    }
+
+    // Reminders & Alerts
+    suspend fun updateReminderSettings(daily: Boolean, threshold: Boolean, category: Boolean) {
+        val state = getOrCreateAppState()
+        appStateDao.insertOrUpdate(
+            state.copy(
+                dailyReminderEnabled = if (daily) 1 else 0,
+                thresholdAlertEnabled = if (threshold) 1 else 0,
+                categoryAlertEnabled = if (category) 1 else 0
+            )
+        )
+    }
+
+    // Requirement 7: Local Backup & Restore
+    suspend fun exportBackupJson(): String {
+        val state = getOrCreateAppState()
+        val allTx = transactionDao.getAllTransactionsSync()
+        val allWork = workHistoryDao.getAllSync()
+        val allDebts = debtDao.getAllSync()
+        val allCats = categoryDao.getAllCategoriesSync()
+
+        val root = JSONObject()
+        root.put("version", "1.1")
+        root.put("exportDate", getTodayDateStr() + " " + getCurrentTimeStr())
+
+        val stateObj = JSONObject()
+        stateObj.put("pocketCash", state.pocketCash)
+        stateObj.put("vault", state.vault)
+        stateObj.put("splurgePool", state.splurgePool)
+        stateObj.put("daysLeft", state.daysLeft)
+        stateObj.put("todaySpent", state.todaySpent)
+        stateObj.put("isInstituteDay", state.isInstituteDay)
+        stateObj.put("lastProcessedDate", state.lastProcessedDate)
+        stateObj.put("workTotal", state.workTotal)
+        stateObj.put("lastClosedDate", state.lastClosedDate)
+        stateObj.put("transportReserve", state.transportReserve)
+        stateObj.put("savingsType", state.savingsType)
+        stateObj.put("savingsValue", state.savingsValue)
+        stateObj.put("totalReceived", state.totalReceived)
+        root.put("appState", stateObj)
+
+        val txArray = JSONArray()
+        for (tx in allTx) {
+            val obj = JSONObject()
+            obj.put("title", tx.title)
+            obj.put("amount", tx.amount)
+            obj.put("category", tx.category)
+            obj.put("dateTag", tx.dateTag)
+            obj.put("createdAt", tx.createdAt)
+            obj.put("deductedFromPocket", tx.deductedFromPocket)
+            obj.put("deductedFromSplurge", tx.deductedFromSplurge)
+            obj.put("deductedFromVault", tx.deductedFromVault)
+            obj.put("deductedFromTransport", tx.deductedFromTransport)
+            obj.put("dateMillis", tx.dateMillis)
+            obj.put("dateIso", tx.dateIso)
+            txArray.put(obj)
+        }
+        root.put("transactions", txArray)
+
+        val workArray = JSONArray()
+        for (w in allWork) {
+            val obj = JSONObject()
+            obj.put("source", w.source)
+            obj.put("amount", w.amount)
+            obj.put("dateStr", w.dateStr)
+            workArray.put(obj)
+        }
+        root.put("workHistory", workArray)
+
+        val debtArray = JSONArray()
+        for (d in allDebts) {
+            val obj = JSONObject()
+            obj.put("person", d.person)
+            obj.put("amount", d.amount)
+            obj.put("type", d.type)
+            obj.put("isSettled", d.isSettled)
+            debtArray.put(obj)
+        }
+        root.put("debts", debtArray)
+
+        val catArray = JSONArray()
+        for (c in allCats) {
+            val obj = JSONObject()
+            obj.put("name", c.name)
+            obj.put("emoji", c.emoji)
+            obj.put("budgetLimit", c.budgetLimit)
+            obj.put("isDefault", c.isDefault)
+            catArray.put(obj)
+        }
+        root.put("categories", catArray)
+
+        return root.toString(2)
+    }
+
+    suspend fun importBackupJson(jsonString: String): Boolean {
+        return try {
+            val root = JSONObject(jsonString)
+            if (!root.has("appState")) return false
+
+            val stateObj = root.getJSONObject("appState")
+            val newState = AppStateEntity(
+                id = 1,
+                pocketCash = stateObj.optDouble("pocketCash", 1500.0),
+                vault = stateObj.optDouble("vault", 500.0),
+                splurgePool = stateObj.optDouble("splurgePool", 0.0),
+                daysLeft = stateObj.optInt("daysLeft", 30),
+                todaySpent = stateObj.optDouble("todaySpent", 0.0),
+                isInstituteDay = stateObj.optInt("isInstituteDay", 0),
+                lastProcessedDate = stateObj.optString("lastProcessedDate", getTodayDateStr()),
+                workTotal = stateObj.optDouble("workTotal", 0.0),
+                lastClosedDate = stateObj.optString("lastClosedDate", ""),
+                transportReserve = stateObj.optDouble("transportReserve", 0.0),
+                savingsType = stateObj.optString("savingsType", "percentage"),
+                savingsValue = stateObj.optDouble("savingsValue", 20.0),
+                totalReceived = stateObj.optDouble("totalReceived", 2000.0)
+            )
+
+            // Clear and replace
+            appStateDao.insertOrUpdate(newState)
+            transactionDao.deleteAll()
+            workHistoryDao.deleteAll()
+            debtDao.deleteAll()
+
+            if (root.has("transactions")) {
+                val txArray = root.getJSONArray("transactions")
+                val list = mutableListOf<TransactionEntity>()
+                for (i in 0 until txArray.length()) {
+                    val obj = txArray.getJSONObject(i)
+                    list.add(
+                        TransactionEntity(
+                            title = obj.getString("title"),
+                            amount = obj.getDouble("amount"),
+                            category = obj.getString("category"),
+                            dateTag = obj.getString("dateTag"),
+                            createdAt = obj.getString("createdAt"),
+                            deductedFromPocket = obj.optDouble("deductedFromPocket", 0.0),
+                            deductedFromSplurge = obj.optDouble("deductedFromSplurge", 0.0),
+                            deductedFromVault = obj.optDouble("deductedFromVault", 0.0),
+                            deductedFromTransport = obj.optDouble("deductedFromTransport", 0.0),
+                            dateMillis = obj.optLong("dateMillis", 0L),
+                            dateIso = obj.optString("dateIso", "")
+                        )
+                    )
+                }
+                transactionDao.insertAll(list)
+            }
+
+            if (root.has("workHistory")) {
+                val workArray = root.getJSONArray("workHistory")
+                val list = mutableListOf<WorkHistoryEntity>()
+                for (i in 0 until workArray.length()) {
+                    val obj = workArray.getJSONObject(i)
+                    list.add(
+                        WorkHistoryEntity(
+                            source = obj.getString("source"),
+                            amount = obj.getDouble("amount"),
+                            dateStr = obj.getString("dateStr")
+                        )
+                    )
+                }
+                workHistoryDao.insertAll(list)
+            }
+
+            if (root.has("debts")) {
+                val debtArray = root.getJSONArray("debts")
+                val list = mutableListOf<DebtEntity>()
+                for (i in 0 until debtArray.length()) {
+                    val obj = debtArray.getJSONObject(i)
+                    list.add(
+                        DebtEntity(
+                            person = obj.getString("person"),
+                            amount = obj.getDouble("amount"),
+                            type = obj.getString("type"),
+                            isSettled = obj.optInt("isSettled", 0)
+                        )
+                    )
+                }
+                debtDao.insertAll(list)
+            }
+
+            if (root.has("categories")) {
+                val catArray = root.getJSONArray("categories")
+                val list = mutableListOf<CategoryEntity>()
+                for (i in 0 until catArray.length()) {
+                    val obj = catArray.getJSONObject(i)
+                    list.add(
+                        CategoryEntity(
+                            name = obj.getString("name"),
+                            emoji = obj.getString("emoji"),
+                            budgetLimit = obj.optDouble("budgetLimit", 0.0),
+                            isDefault = obj.optInt("isDefault", 0)
+                        )
+                    )
+                }
+                categoryDao.deleteAll()
+                categoryDao.insertAll(list)
+            }
+
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    private fun formatTwoDecimals(value: Double): String {
+        return String.format(Locale.US, "%.2f", value)
     }
 }
