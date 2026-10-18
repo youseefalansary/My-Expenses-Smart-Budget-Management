@@ -73,6 +73,89 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
+private fun hasColumn(db: SupportSQLiteDatabase, tableName: String, columnName: String): Boolean {
+    db.query("PRAGMA table_info(`$tableName`)").use { cursor ->
+        val nameIndex = cursor.getColumnIndexOrThrow("name")
+        while (cursor.moveToNext()) {
+            if (cursor.getString(nameIndex) == columnName) return true
+        }
+    }
+    return false
+}
+
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        val hasExpectedColumn = hasColumn(db, "app_state", "day_start_pocket")
+        val hasV12Column = hasColumn(db, "app_state", "day_start_pocket_cash")
+
+        if (hasExpectedColumn && !hasV12Column) return
+
+        if (!hasExpectedColumn && !hasV12Column) {
+            db.execSQL("ALTER TABLE `app_state` ADD COLUMN `day_start_pocket` REAL NOT NULL DEFAULT 0.0")
+            db.execSQL("UPDATE `app_state` SET `day_start_pocket` = `pocket_cash` + `today_spent`")
+            return
+        }
+
+        val dayStartValue = when {
+            hasExpectedColumn && hasV12Column ->
+                "CASE WHEN `day_start_pocket` != 0.0 THEN `day_start_pocket` ELSE `day_start_pocket_cash` END"
+            hasV12Column -> "`day_start_pocket_cash`"
+            else -> "`day_start_pocket`"
+        }
+
+        // Rebuild app_state to remove the obsolete v1.2 column while preserving every value.
+        db.execSQL("DROP TABLE IF EXISTS `app_state_v5_new`")
+        db.execSQL(
+            """
+            CREATE TABLE `app_state_v5_new` (
+                `id` INTEGER NOT NULL,
+                `pocket_cash` REAL NOT NULL,
+                `vault` REAL NOT NULL,
+                `splurge_pool` REAL NOT NULL,
+                `days_left` INTEGER NOT NULL,
+                `today_spent` REAL NOT NULL,
+                `is_institute_day` INTEGER NOT NULL,
+                `last_processed_date` TEXT NOT NULL,
+                `work_total` REAL NOT NULL,
+                `last_closed_date` TEXT NOT NULL DEFAULT '',
+                `transport_reserve` REAL NOT NULL DEFAULT 0.0,
+                `savings_type` TEXT NOT NULL DEFAULT 'percentage',
+                `savings_value` REAL NOT NULL DEFAULT 20.0,
+                `total_received` REAL NOT NULL DEFAULT 2000.0,
+                `daily_reminder_enabled` INTEGER NOT NULL DEFAULT 0,
+                `threshold_alert_enabled` INTEGER NOT NULL DEFAULT 0,
+                `category_alert_enabled` INTEGER NOT NULL DEFAULT 0,
+                `day_start_pocket` REAL NOT NULL DEFAULT 0.0,
+                `currency_code` TEXT NOT NULL DEFAULT 'EGP',
+                `language_code` TEXT NOT NULL DEFAULT 'ar',
+                `cycle_end_date` TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY(`id`)
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO `app_state_v5_new` (
+                `id`, `pocket_cash`, `vault`, `splurge_pool`, `days_left`, `today_spent`,
+                `is_institute_day`, `last_processed_date`, `work_total`, `last_closed_date`,
+                `transport_reserve`, `savings_type`, `savings_value`, `total_received`,
+                `daily_reminder_enabled`, `threshold_alert_enabled`, `category_alert_enabled`,
+                `day_start_pocket`, `currency_code`, `language_code`, `cycle_end_date`
+            )
+            SELECT
+                `id`, `pocket_cash`, `vault`, `splurge_pool`, `days_left`, `today_spent`,
+                `is_institute_day`, `last_processed_date`, `work_total`, `last_closed_date`,
+                `transport_reserve`, `savings_type`, `savings_value`, `total_received`,
+                `daily_reminder_enabled`, `threshold_alert_enabled`, `category_alert_enabled`,
+                $dayStartValue, `currency_code`, `language_code`, `cycle_end_date`
+            FROM `app_state`
+            """.trimIndent()
+        )
+        db.execSQL("DROP TABLE `app_state`")
+        db.execSQL("ALTER TABLE `app_state_v5_new` RENAME TO `app_state`")
+    }
+}
+
 @Database(
     entities = [
         AppStateEntity::class,
@@ -81,7 +164,7 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         DebtEntity::class,
         CategoryEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class MasrofiDatabase : RoomDatabase() {
@@ -102,7 +185,7 @@ abstract class MasrofiDatabase : RoomDatabase() {
                     MasrofiDatabase::class.java,
                     "masrofi_db.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance

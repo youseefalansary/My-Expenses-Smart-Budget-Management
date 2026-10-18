@@ -6,6 +6,10 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.data.AppStateEntity
 import com.example.data.MasrofiDatabase
 import com.example.data.MasrofiRepository
+import com.example.data.MIGRATION_1_2
+import com.example.data.MIGRATION_2_3
+import com.example.data.MIGRATION_3_4
+import com.example.data.MIGRATION_4_5
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -340,5 +344,150 @@ class ExampleRobolectricTest {
 
         val total2 = state2.pocketCash + state2.vault + state2.splurgePool + state2.transportReserve
         assertEquals(1200.0, total2, 0.001)
+    }
+
+    @Test
+    fun `v1_2 database migration preserves balances and records`() {
+        val databaseName = "migration-v12-${System.nanoTime()}.db"
+        context.deleteDatabase(databaseName)
+
+        try {
+            val legacyDb = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
+            try {
+                legacyDb.execSQL(
+                    """
+                    CREATE TABLE `app_state` (
+                        `id` INTEGER NOT NULL,
+                        `pocket_cash` REAL NOT NULL,
+                        `vault` REAL NOT NULL,
+                        `splurge_pool` REAL NOT NULL,
+                        `days_left` INTEGER NOT NULL,
+                        `today_spent` REAL NOT NULL,
+                        `is_institute_day` INTEGER NOT NULL,
+                        `last_processed_date` TEXT NOT NULL,
+                        `work_total` REAL NOT NULL,
+                        `last_closed_date` TEXT NOT NULL DEFAULT '',
+                        `transport_reserve` REAL NOT NULL DEFAULT 0.0,
+                        `savings_type` TEXT NOT NULL DEFAULT 'percentage',
+                        `savings_value` REAL NOT NULL DEFAULT 20.0,
+                        `total_received` REAL NOT NULL DEFAULT 2000.0,
+                        `daily_reminder_enabled` INTEGER NOT NULL DEFAULT 0,
+                        `threshold_alert_enabled` INTEGER NOT NULL DEFAULT 0,
+                        `category_alert_enabled` INTEGER NOT NULL DEFAULT 0,
+                        `day_start_pocket_cash` REAL NOT NULL DEFAULT 0.0,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                legacyDb.execSQL(
+                    """
+                    CREATE TABLE `transactions` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `amount` REAL NOT NULL,
+                        `category` TEXT NOT NULL,
+                        `date_tag` TEXT NOT NULL,
+                        `created_at` TEXT NOT NULL,
+                        `deducted_from_pocket` REAL NOT NULL DEFAULT 0.0,
+                        `deducted_from_splurge` REAL NOT NULL DEFAULT 0.0,
+                        `deducted_from_vault` REAL NOT NULL DEFAULT 0.0,
+                        `deducted_from_transport` REAL NOT NULL DEFAULT 0.0,
+                        `date_millis` INTEGER NOT NULL DEFAULT 0,
+                        `date_iso` TEXT NOT NULL DEFAULT ''
+                    )
+                    """.trimIndent()
+                )
+                legacyDb.execSQL(
+                    """
+                    CREATE TABLE `work_history` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `source` TEXT NOT NULL,
+                        `amount` REAL NOT NULL,
+                        `date_str` TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                legacyDb.execSQL(
+                    """
+                    CREATE TABLE `debts` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `person` TEXT NOT NULL,
+                        `amount` REAL NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `is_settled` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                legacyDb.execSQL(
+                    """
+                    CREATE TABLE `categories` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `emoji` TEXT NOT NULL,
+                        `budget_limit` REAL NOT NULL DEFAULT 0.0,
+                        `is_default` INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                legacyDb.execSQL(
+                    """
+                    INSERT INTO `app_state` VALUES
+                    (1, 700.0, 150.0, 20.0, 6, 100.0, 0, '2026-10-18', 0.0,
+                     '', 0.0, 'fixed', 150.0, 950.0, 0, 0, 0, 800.0)
+                    """.trimIndent()
+                )
+                legacyDb.execSQL(
+                    """
+                    INSERT INTO `transactions` (
+                        `id`, `title`, `amount`, `category`, `date_tag`, `created_at`,
+                        `deducted_from_pocket`, `date_iso`
+                    ) VALUES (1, 'طعام', 100.0, 'طعام ومشروبات', 'اليوم', '01:00 PM', 100.0, '2026-10-18')
+                    """.trimIndent()
+                )
+                legacyDb.execSQL("INSERT INTO `work_history` VALUES (1, 'عمل حر', 300.0, '2026-10-18')")
+                legacyDb.execSQL("INSERT INTO `debts` VALUES (1, 'أحمد', 50.0, 'give', 0)")
+                legacyDb.execSQL("INSERT INTO `categories` VALUES (1, 'طعام ومشروبات', '🍔', 500.0, 1)")
+                legacyDb.version = 3
+            } finally {
+                legacyDb.close()
+            }
+
+            val upgradedDb = Room.databaseBuilder(context, MasrofiDatabase::class.java, databaseName)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .build()
+            try {
+                runBlocking {
+                    val state = upgradedDb.appStateDao().getAppStateSync()!!
+                    assertEquals(700.0, state.pocketCash, 0.001)
+                    assertEquals(150.0, state.vault, 0.001)
+                    assertEquals(800.0, state.dayStartPocket, 0.001)
+                    assertEquals(950.0, state.totalReceived, 0.001)
+                    assertEquals(1, upgradedDb.transactionDao().getAllTransactionsSync().size)
+                    assertEquals(100.0, upgradedDb.transactionDao().getAllTransactionsSync().first().amount, 0.001)
+                    assertEquals(1, upgradedDb.workHistoryDao().getAllSync().size)
+                    assertEquals(1, upgradedDb.debtDao().getAllSync().size)
+                    assertEquals(1, upgradedDb.categoryDao().getAllCategoriesSync().size)
+                }
+            } finally {
+                upgradedDb.close()
+            }
+
+            val migratedDb = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
+            try {
+                val cursor = migratedDb.rawQuery("PRAGMA table_info(`app_state`)", null)
+                val columnNames = mutableSetOf<String>()
+                cursor.use {
+                    val nameIndex = it.getColumnIndexOrThrow("name")
+                    while (it.moveToNext()) columnNames.add(it.getString(nameIndex))
+                }
+                assertTrue(columnNames.contains("day_start_pocket"))
+                assertFalse(columnNames.contains("day_start_pocket_cash"))
+                assertEquals(5, migratedDb.version)
+            } finally {
+                migratedDb.close()
+            }
+        } finally {
+            context.deleteDatabase(databaseName)
+        }
     }
 }
