@@ -22,11 +22,6 @@ data class EndDayResult(
     val message: String
 )
 
-internal fun calculateDailyAllowance(dayStartPocketCash: Double, daysLeft: Int): Double {
-    if (daysLeft <= 0) return 0.0
-    return max(0.0, dayStartPocketCash) / daysLeft
-}
-
 class MasrofiRepository(
     private val appStateDao: AppStateDao,
     private val transactionDao: TransactionDao,
@@ -65,7 +60,6 @@ class MasrofiRepository(
                 isInstituteDay = 0,
                 lastProcessedDate = today,
                 workTotal = 0.0,
-                dayStartPocketCash = 1600.0,
                 lastClosedDate = "",
                 transportReserve = 0.0,
                 savingsType = "percentage",
@@ -73,7 +67,8 @@ class MasrofiRepository(
                 totalReceived = 2000.0,
                 dailyReminderEnabled = 0,
                 thresholdAlertEnabled = 0,
-                categoryAlertEnabled = 0
+                categoryAlertEnabled = 0,
+                dayStartPocket = 1600.0
             )
             appStateDao.insertOrUpdate(state)
         }
@@ -103,27 +98,29 @@ class MasrofiRepository(
             val wasAlreadyClosed = (state.lastClosedDate == state.lastProcessedDate)
 
             if (wasAlreadyClosed) {
-                // Already closed manually: simply update lastProcessedDate and reset today's spent
+                // Already closed manually: simply update lastProcessedDate, reset today's spent and set dayStartPocket
                 appStateDao.insertOrUpdate(
                     state.copy(
                         lastProcessedDate = today,
                         todaySpent = 0.0,
                         isInstituteDay = 0,
-                        transportReserve = 0.0
+                        transportReserve = 0.0,
+                        dayStartPocket = state.pocketCash
                     )
                 )
             } else {
                 // Not closed yet: close previous day once, transfer surplus and decrement daysLeft
-                val allowance = calculateDailyAllowance(state.dayStartPocketCash, state.daysLeft)
-                val surplus = min(max(0.0, allowance - state.todaySpent), max(0.0, state.pocketCash))
-                val newPocketCash = max(0.0, state.pocketCash - surplus)
+                val startPocket = if (state.dayStartPocket > 0.0) state.dayStartPocket else (state.pocketCash + state.todaySpent)
+                val allowance = if (state.daysLeft > 0) startPocket / state.daysLeft else 0.0
+                val surplus = max(0.0, allowance - state.todaySpent)
                 val newSplurge = state.splurgePool + surplus
+                val newPocketCash = max(0.0, state.pocketCash - surplus)
                 val newDaysLeft = max(0, state.daysLeft - 1)
 
                 appStateDao.insertOrUpdate(
                     state.copy(
                         pocketCash = newPocketCash,
-                        dayStartPocketCash = newPocketCash,
+                        dayStartPocket = newPocketCash,
                         splurgePool = newSplurge,
                         daysLeft = newDaysLeft,
                         todaySpent = 0.0,
@@ -152,15 +149,16 @@ class MasrofiRepository(
             )
         }
 
-        val allowance = calculateDailyAllowance(state.dayStartPocketCash, state.daysLeft)
-        val surplus = min(max(0.0, allowance - state.todaySpent), max(0.0, state.pocketCash))
-        val newPocketCash = max(0.0, state.pocketCash - surplus)
+        val startPocket = if (state.dayStartPocket > 0.0) state.dayStartPocket else (state.pocketCash + state.todaySpent)
+        val allowance = if (state.daysLeft > 0) startPocket / state.daysLeft else 0.0
+        val surplus = max(0.0, allowance - state.todaySpent)
         val newSplurge = state.splurgePool + surplus
+        val newPocketCash = max(0.0, state.pocketCash - surplus)
         val newDaysLeft = max(0, state.daysLeft - 1)
 
         val updatedState = state.copy(
             pocketCash = newPocketCash,
-            dayStartPocketCash = newPocketCash,
+            dayStartPocket = newPocketCash,
             splurgePool = newSplurge,
             daysLeft = newDaysLeft,
             todaySpent = 0.0,
@@ -218,8 +216,6 @@ class MasrofiRepository(
         }
 
         val state = getOrCreateAppState()
-        val dailyAllowance = if (isYesterday) 0.0
-        else calculateDailyAllowance(state.dayStartPocketCash, state.daysLeft)
         var vaultWarned = false
 
         var newPocketCash = state.pocketCash
@@ -266,7 +262,9 @@ class MasrofiRepository(
             }
 
             if (remainingAmount > 0) {
-                val remainingAllowanceToday = max(0.0, dailyAllowance - state.todaySpent)
+                val startPocket = if (state.dayStartPocket > 0.0) state.dayStartPocket else (state.pocketCash + state.todaySpent)
+                val allowance = if (state.daysLeft > 0) startPocket / state.daysLeft else 0.0
+                val remainingAllowanceToday = max(0.0, allowance - state.todaySpent)
 
                 if (remainingAmount <= remainingAllowanceToday) {
                     dedPocket = remainingAmount
@@ -305,21 +303,25 @@ class MasrofiRepository(
         }
 
         // Persist AppState with updated balances
+        val effectiveStartPocket = if (state.dayStartPocket > 0.0) state.dayStartPocket else (state.pocketCash + state.todaySpent)
         appStateDao.insertOrUpdate(
             state.copy(
                 pocketCash = newPocketCash,
                 vault = newVault,
                 splurgePool = newSplurge,
                 todaySpent = newTodaySpent,
-                transportReserve = newTransportReserve
+                transportReserve = newTransportReserve,
+                dayStartPocket = effectiveStartPocket
             )
         )
 
-        // Requirement 1 & 6: Store breakdown and real timestamp
-        val dateTag = if (isYesterday) "أمس" else "اليوم"
-        val timeStr = getCurrentTimeStr()
-        val todayIso = getTodayDateStr()
+        // Requirement 1 & 6 & v2.0: Store breakdown and real timestamp with day of week & exact time
         val nowMillis = System.currentTimeMillis()
+        val todayIso = getTodayDateStr()
+        val effectiveIso = if (isYesterday) DateTimeUtils.getYesterdayIso() else todayIso
+        val dayName = DateTimeUtils.getDayOfWeekName(nowMillis, true)
+        val timeStr = DateTimeUtils.formatTime(nowMillis, true)
+        val dateTag = if (isYesterday) "أمس" else "اليوم"
 
         transactionDao.insert(
             TransactionEntity(
@@ -333,14 +335,16 @@ class MasrofiRepository(
                 deductedFromVault = dedVault,
                 deductedFromTransport = dedTransport,
                 dateMillis = nowMillis,
-                dateIso = todayIso
+                dateIso = effectiveIso,
+                dayName = dayName,
+                exactTime = timeStr
             )
         )
 
         val message = if (vaultWarned) {
             "تم الخصم مع بدء استنزاف التوفير الإجباري!"
         } else if (dedTransport > 0) {
-            "تم الخصم بنجاح (مشمولاً ${dedTransport.toInt()} ج.م من محجوز مواصلات المعهد)"
+            "تم الخصم بنجاح (مشمولاً ${dedTransport.toInt()} من محجوز مواصلات المعهد)"
         } else {
             "تم تسجيل المصروف بنجاح وتحديث الأرصدة"
         }
@@ -370,7 +374,7 @@ class MasrofiRepository(
             newVault += tx.deductedFromVault
             newTransportReserve += tx.deductedFromTransport
 
-            if (tx.dateTag == "اليوم") {
+            if (tx.dateTag == "اليوم" || tx.dateTag.startsWith("اليوم")) {
                 val nonTransportPortion = tx.amount - tx.deductedFromTransport
                 newTodaySpent = max(0.0, state.todaySpent - nonTransportPortion)
             }
@@ -381,7 +385,7 @@ class MasrofiRepository(
                 "vault" -> newVault += tx.amount
                 else -> newPocketCash += tx.amount
             }
-            if (tx.dateTag == "اليوم") {
+            if (tx.dateTag == "اليوم" || tx.dateTag.startsWith("اليوم")) {
                 newTodaySpent = max(0.0, state.todaySpent - tx.amount)
             }
         }
@@ -419,19 +423,27 @@ class MasrofiRepository(
     suspend fun depositFreelanceIncome(source: String, amount: Double) {
         if (amount <= 0) return
         val state = getOrCreateAppState()
+        val curStartPocket = if (state.dayStartPocket > 0.0) state.dayStartPocket else state.pocketCash
         val updatedState = state.copy(
             pocketCash = state.pocketCash + amount,
-            dayStartPocketCash = state.dayStartPocketCash + amount,
+            dayStartPocket = curStartPocket + amount,
             workTotal = state.workTotal + amount
         )
         appStateDao.insertOrUpdate(updatedState)
 
-        val dateStr = getTodayDateStr() + " " + getCurrentTimeStr()
+        val nowMillis = System.currentTimeMillis()
+        val dayName = DateTimeUtils.getDayOfWeekName(nowMillis, true)
+        val timeStr = DateTimeUtils.formatTime(nowMillis, true)
+        val dateIso = getTodayDateStr()
+        val fullDateDisplay = "$dayName $dateIso • $timeStr"
         workHistoryDao.insert(
             WorkHistoryEntity(
                 source = source.ifBlank { "مشروع حر" },
                 amount = amount,
-                dateStr = dateStr
+                dateStr = fullDateDisplay,
+                dayName = dayName,
+                exactTime = timeStr,
+                dateMillis = nowMillis
             )
         )
     }
@@ -445,20 +457,25 @@ class MasrofiRepository(
         } else {
             state.pocketCash + amount
         }
+        val curStartPocket = if (state.dayStartPocket > 0.0) state.dayStartPocket else state.pocketCash
+        val newDayStart = if (type == "give") max(0.0, curStartPocket - amount) else (curStartPocket + amount)
 
-        appStateDao.insertOrUpdate(
-            state.copy(
-                pocketCash = newPocket,
-                dayStartPocketCash = max(0.0, state.dayStartPocketCash + newPocket - state.pocketCash)
-            )
-        )
+        appStateDao.insertOrUpdate(state.copy(pocketCash = newPocket, dayStartPocket = newDayStart))
+
+        val nowMillis = System.currentTimeMillis()
+        val dayName = DateTimeUtils.getDayOfWeekName(nowMillis, true)
+        val timeStr = DateTimeUtils.formatTime(nowMillis, true)
+        val dateIso = getTodayDateStr()
+        val fullDateDisplay = "$dayName $dateIso • $timeStr"
 
         debtDao.insert(
             DebtEntity(
                 person = person.ifBlank { "شخص" },
                 amount = amount,
                 type = type,
-                isSettled = 0
+                isSettled = 0,
+                dateStr = fullDateDisplay,
+                dateMillis = nowMillis
             )
         )
     }
@@ -473,14 +490,33 @@ class MasrofiRepository(
         } else {
             max(0.0, state.pocketCash - debt.amount)
         }
+        val curStartPocket = if (state.dayStartPocket > 0.0) state.dayStartPocket else state.pocketCash
+        val newDayStart = if (debt.type == "give") (curStartPocket + debt.amount) else max(0.0, curStartPocket - debt.amount)
 
+        appStateDao.insertOrUpdate(state.copy(pocketCash = newPocket, dayStartPocket = newDayStart))
+        debtDao.updateSettled(debtId, 1)
+    }
+
+    // Cycle duration & target end date adjustment
+    suspend fun updateCycleDuration(days: Int, endDate: String) {
+        val state = getOrCreateAppState()
         appStateDao.insertOrUpdate(
             state.copy(
-                pocketCash = newPocket,
-                dayStartPocketCash = max(0.0, state.dayStartPocketCash + newPocket - state.pocketCash)
+                daysLeft = max(1, days),
+                cycleEndDate = endDate
             )
         )
-        debtDao.updateSettled(debtId, 1)
+    }
+
+    // App Preferences (Currency & Language)
+    suspend fun updatePreferences(currencyCode: String, languageCode: String) {
+        val state = getOrCreateAppState()
+        appStateDao.insertOrUpdate(
+            state.copy(
+                currencyCode = currencyCode,
+                languageCode = languageCode
+            )
+        )
     }
 
     // Requirement 4: Savings as Percentage OR Fixed Amount
@@ -488,13 +524,12 @@ class MasrofiRepository(
         totalReceived: Double,
         days: Int,
         savingsType: String,
-        savingsValue: Double
+        savingsValue: Double,
+        cycleEndDate: String = ""
     ) {
         val vaultAmount: Double = if (savingsType == "fixed") {
-            // Fixed amount: exact value, do NOT round or convert to approximate percentage
             min(totalReceived, max(0.0, savingsValue))
         } else {
-            // Percentage: accurate percentage calculation, rounded to two decimal places (القرش)
             val pct = min(100.0, max(0.0, savingsValue))
             round((totalReceived * (pct / 100.0)) * 100.0) / 100.0
         }
@@ -503,9 +538,15 @@ class MasrofiRepository(
         val today = getTodayDateStr()
 
         val state = getOrCreateAppState()
+        val calculatedEndDate = if (cycleEndDate.isNotBlank()) {
+            cycleEndDate
+        } else {
+            DateTimeUtils.addDaysToIso(today, days)
+        }
+
         val newState = state.copy(
             pocketCash = pocketAmount,
-            dayStartPocketCash = pocketAmount,
+            dayStartPocket = pocketAmount,
             vault = vaultAmount,
             splurgePool = 0.0,
             daysLeft = max(1, days),
@@ -516,7 +557,8 @@ class MasrofiRepository(
             lastClosedDate = "",
             totalReceived = totalReceived,
             savingsType = savingsType,
-            savingsValue = savingsValue
+            savingsValue = savingsValue,
+            cycleEndDate = calculatedEndDate
         )
         appStateDao.insertOrUpdate(newState)
     }
@@ -571,12 +613,11 @@ class MasrofiRepository(
         val allCats = categoryDao.getAllCategoriesSync()
 
         val root = JSONObject()
-        root.put("version", "1.2")
+        root.put("version", "2.0")
         root.put("exportDate", getTodayDateStr() + " " + getCurrentTimeStr())
 
         val stateObj = JSONObject()
         stateObj.put("pocketCash", state.pocketCash)
-        stateObj.put("dayStartPocketCash", state.dayStartPocketCash)
         stateObj.put("vault", state.vault)
         stateObj.put("splurgePool", state.splurgePool)
         stateObj.put("daysLeft", state.daysLeft)
@@ -589,6 +630,10 @@ class MasrofiRepository(
         stateObj.put("savingsType", state.savingsType)
         stateObj.put("savingsValue", state.savingsValue)
         stateObj.put("totalReceived", state.totalReceived)
+        stateObj.put("dayStartPocket", state.dayStartPocket)
+        stateObj.put("currencyCode", state.currencyCode)
+        stateObj.put("languageCode", state.languageCode)
+        stateObj.put("cycleEndDate", state.cycleEndDate)
         root.put("appState", stateObj)
 
         val txArray = JSONArray()
@@ -605,6 +650,8 @@ class MasrofiRepository(
             obj.put("deductedFromTransport", tx.deductedFromTransport)
             obj.put("dateMillis", tx.dateMillis)
             obj.put("dateIso", tx.dateIso)
+            obj.put("dayName", tx.dayName)
+            obj.put("exactTime", tx.exactTime)
             txArray.put(obj)
         }
         root.put("transactions", txArray)
@@ -615,6 +662,9 @@ class MasrofiRepository(
             obj.put("source", w.source)
             obj.put("amount", w.amount)
             obj.put("dateStr", w.dateStr)
+            obj.put("dayName", w.dayName)
+            obj.put("exactTime", w.exactTime)
+            obj.put("dateMillis", w.dateMillis)
             workArray.put(obj)
         }
         root.put("workHistory", workArray)
@@ -626,6 +676,8 @@ class MasrofiRepository(
             obj.put("amount", d.amount)
             obj.put("type", d.type)
             obj.put("isSettled", d.isSettled)
+            obj.put("dateStr", d.dateStr)
+            obj.put("dateMillis", d.dateMillis)
             debtArray.put(obj)
         }
         root.put("debts", debtArray)
@@ -650,17 +702,16 @@ class MasrofiRepository(
             if (!root.has("appState")) return false
 
             val stateObj = root.getJSONObject("appState")
+            val pCash = stateObj.optDouble("pocketCash", 1500.0)
+            val tSpent = stateObj.optDouble("todaySpent", 0.0)
             val newState = AppStateEntity(
                 id = 1,
-                pocketCash = stateObj.optDouble("pocketCash", 1500.0),
-                dayStartPocketCash = stateObj.optDouble(
-                    "dayStartPocketCash",
-                    stateObj.optDouble("pocketCash", 1500.0) + stateObj.optDouble("todaySpent", 0.0)
-                ),
+                pocketCash = pCash,
+                dayStartPocket = stateObj.optDouble("dayStartPocket", pCash + tSpent),
                 vault = stateObj.optDouble("vault", 500.0),
                 splurgePool = stateObj.optDouble("splurgePool", 0.0),
                 daysLeft = stateObj.optInt("daysLeft", 30),
-                todaySpent = stateObj.optDouble("todaySpent", 0.0),
+                todaySpent = tSpent,
                 isInstituteDay = stateObj.optInt("isInstituteDay", 0),
                 lastProcessedDate = stateObj.optString("lastProcessedDate", getTodayDateStr()),
                 workTotal = stateObj.optDouble("workTotal", 0.0),
@@ -668,7 +719,10 @@ class MasrofiRepository(
                 transportReserve = stateObj.optDouble("transportReserve", 0.0),
                 savingsType = stateObj.optString("savingsType", "percentage"),
                 savingsValue = stateObj.optDouble("savingsValue", 20.0),
-                totalReceived = stateObj.optDouble("totalReceived", 2000.0)
+                totalReceived = stateObj.optDouble("totalReceived", 2000.0),
+                currencyCode = stateObj.optString("currencyCode", "EGP"),
+                languageCode = stateObj.optString("languageCode", "ar"),
+                cycleEndDate = stateObj.optString("cycleEndDate", "")
             )
 
             // Clear and replace
@@ -694,7 +748,9 @@ class MasrofiRepository(
                             deductedFromVault = obj.optDouble("deductedFromVault", 0.0),
                             deductedFromTransport = obj.optDouble("deductedFromTransport", 0.0),
                             dateMillis = obj.optLong("dateMillis", 0L),
-                            dateIso = obj.optString("dateIso", "")
+                            dateIso = obj.optString("dateIso", ""),
+                            dayName = obj.optString("dayName", ""),
+                            exactTime = obj.optString("exactTime", "")
                         )
                     )
                 }
@@ -710,7 +766,10 @@ class MasrofiRepository(
                         WorkHistoryEntity(
                             source = obj.getString("source"),
                             amount = obj.getDouble("amount"),
-                            dateStr = obj.getString("dateStr")
+                            dateStr = obj.getString("dateStr"),
+                            dayName = obj.optString("dayName", ""),
+                            exactTime = obj.optString("exactTime", ""),
+                            dateMillis = obj.optLong("dateMillis", 0L)
                         )
                     )
                 }
@@ -727,7 +786,9 @@ class MasrofiRepository(
                             person = obj.getString("person"),
                             amount = obj.getDouble("amount"),
                             type = obj.getString("type"),
-                            isSettled = obj.optInt("isSettled", 0)
+                            isSettled = obj.optInt("isSettled", 0),
+                            dateStr = obj.optString("dateStr", ""),
+                            dateMillis = obj.optLong("dateMillis", 0L)
                         )
                     )
                 }

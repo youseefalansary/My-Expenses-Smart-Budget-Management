@@ -22,8 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Paid
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -49,6 +49,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.CurrencyConfig
+import com.example.data.DateTimeUtils
 import com.example.data.WorkHistoryEntity
 import com.example.ui.MasrofiUiState
 import com.example.ui.components.ConfirmationDialog
@@ -57,9 +59,12 @@ import com.example.ui.theme.*
 @Composable
 fun FreelanceScreen(
     uiState: MasrofiUiState,
+    currentCurrency: String,
+    currentLanguage: String,
     onDepositFreelance: (source: String, amount: Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isAr = currentLanguage != "en"
     var source by remember { mutableStateOf("") }
     var amountText by remember { mutableStateOf("") }
     var showConfirmDialog by remember { mutableStateOf(false) }
@@ -95,13 +100,13 @@ fun FreelanceScreen(
     ) {
         item {
             Text(
-                text = "محفظة دخل العمل الحر (شغلي)",
+                text = if (isAr) "محفظة دخل العمل الحر (شغلي)" else "Freelance Income Hub",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                text = "أرباحك الحرة تذهب بنسبة 100% لكاش الجيب فوراً وممنوعة من أي اقتطاع",
+                text = if (isAr) "أرباحك الحرة تذهب بنسبة 100% لكاش الجيب فوراً مع توثيق التاريخ والوقت" else "Freelance earnings go 100% to Pocket cash with exact timestamp",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -144,7 +149,7 @@ fun FreelanceScreen(
                                 }
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
-                                    text = "إجمالي أرباح العمل الحر المتراكمة",
+                                    text = if (isAr) "إجمالي أرباح العمل الحر المتراكمة" else "Accumulated Freelance Earnings",
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -156,68 +161,38 @@ fun FreelanceScreen(
                                 color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)
                             ) {
                                 Text(
-                                    text = "100% كاش نقي",
+                                    text = if (isAr) "100% كاش نقي" else "100% Cash",
                                     fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.secondary,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                 )
                             }
                         }
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            Text(
-                                text = String.format("%.1f", uiState.appState.workTotal),
-                                fontSize = 36.sp,
-                                fontWeight = FontWeight.Black,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "ج.م",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(bottom = 6.dp)
-                            )
-                        }
+                        Text(
+                            text = CurrencyConfig.format(uiState.appState.workTotal, currentCurrency, isAr, showDecimals = true),
+                            fontSize = 34.sp,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.secondary,
+                            letterSpacing = (-0.5).sp
+                        )
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
-                        Surface(
-                            shape = smallShape,
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
-                            border = androidx.compose.foundation.BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Shield,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "قاعدة ذهبية: لا يتم استقطاع أي نسبة للتوفير الإجباري من فلوس شغلك، بل تعزز كاش صرفك مباشرة.",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    lineHeight = 16.sp
-                                )
-                            }
-                        }
+                        Text(
+                            text = if (isAr) "كل جنيه عمل حر يدخل كاش جيبك مباشرة لرفع المسموح اليومي فوراً دون اقتطاع" else "Every income deposit raises your daily allowance directly without deductions",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
         }
 
-        // Deposit New Freelance Form
+        // Deposit Freelance Form
         item {
             Card(
                 shape = cardShape,
@@ -227,25 +202,47 @@ fun FreelanceScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "إيداع دفعة عمل حر جديدة",
+                        text = if (isAr) "إيداع دفعة عمل حر جديدة" else "Deposit New Freelance Income",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Date & Timestamp indicator
+                    Surface(
+                        shape = smallShape,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "${if (isAr) "تاريخ وتوقيت الإيداع:" else "Deposit Time:"} ${DateTimeUtils.formatFullDateTime(System.currentTimeMillis(), DateTimeUtils.getTodayIso(), isAr)}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
                     OutlinedTextField(
                         value = source,
                         onValueChange = { source = it },
-                        label = { Text("مصدر الفلوس / المشروع أو العميل") },
-                        placeholder = { Text("مثلاً: برمجة تطبيق، تصميم لوجو، ترجمة...") },
+                        label = { Text(if (isAr) "مصدر الفلوس / المشروع أو العميل" else "Client / Project / Source") },
+                        placeholder = { Text(if (isAr) "مثلاً: تصميم تطبيق، مونتاج، ترجمة..." else "e.g., App UI Design, Translation...") },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
                         ),
                         shape = smallShape,
                         modifier = Modifier
@@ -255,17 +252,16 @@ fun FreelanceScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    val symbol = CurrencyConfig.getSymbol(currentCurrency, isAr)
                     OutlinedTextField(
                         value = amountText,
                         onValueChange = { amountText = it },
-                        label = { Text("المبلغ المستلم (ج.م)") },
+                        label = { Text("${if (isAr) "المبلغ المستلم" else "Amount Received"} ($symbol)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
                         ),
                         shape = smallShape,
                         modifier = Modifier
@@ -329,7 +325,7 @@ fun FreelanceScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "إيداع فوري في كاش الجيب (+${if (currentAmount > 0) "$currentAmount ج.م" else ""})",
+                            text = "${if (isAr) "إيداع فوري في كاش الجيب" else "Deposit to Pocket Cash"} (+${if (currentAmount > 0) CurrencyConfig.format(currentAmount, currentCurrency, isAr) else ""})",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
@@ -341,7 +337,7 @@ fun FreelanceScreen(
         // Freelance History Header
         item {
             Text(
-                text = "سجل دفعات العمل الحر",
+                text = if (isAr) "سجل دفعات العمل الحر (مؤرخة باليوم والوقت)" else "Freelance Income History (Dated & Timestamped)",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
@@ -360,31 +356,37 @@ fun FreelanceScreen(
                         modifier = Modifier.padding(20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        Text("💼", fontSize = 28.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "لم تسجل أي دفعات عمل حر بعد",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 14.sp
+                            text = if (isAr) "لا توجد دفعات عمل حر مسجلة حتى الآن" else "No freelance payments recorded yet",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
         } else {
-            items(
-                items = uiState.workHistory,
-                key = { it.id }
-            ) { work ->
-                WorkHistoryCard(work = work)
+            items(uiState.workHistory, key = { it.id }) { work ->
+                WorkHistoryCard(
+                    work = work,
+                    currentCurrency = currentCurrency,
+                    isArabic = isAr
+                )
             }
         }
     }
 
     if (showConfirmDialog) {
-        val finalSource = source.ifBlank { "مشروع حر" }
+        val finalSource = source.ifBlank { if (isAr) "مشروع حر" else "Freelance Project" }
         ConfirmationDialog(
-            title = "تأكيد إيداع أرباح العمل الحر",
-            message = "هل تريد إيداع مبلغ $currentAmount ج.م من '$finalSource'؟\nسيذهب المبلغ بنسبة 100% إلى كاش الجيب لزيادة ميزانيتك اليومية فوراً.",
-            confirmText = "تأكيد الإيداع",
-            cancelText = "تراجع",
+            title = if (isAr) "تأكيد إيداع أرباح العمل الحر" else "Confirm Freelance Deposit",
+            message = if (isAr)
+                "هل تريد إيداع مبلغ ${CurrencyConfig.format(currentAmount, currentCurrency, isAr)} من '$finalSource'؟\nسيذهب المبلغ بنسبة 100% إلى كاش الجيب لزيادة ميزانيتك اليومية فوراً."
+            else
+                "Deposit ${CurrencyConfig.format(currentAmount, currentCurrency, isAr)} from '$finalSource' into Pocket Cash?",
+            confirmText = if (isAr) "تأكيد الإيداع" else "Confirm",
+            cancelText = if (isAr) "تراجع" else "Cancel",
             onConfirm = {
                 onDepositFreelance(finalSource, currentAmount)
                 source = ""
@@ -396,7 +398,11 @@ fun FreelanceScreen(
 }
 
 @Composable
-fun WorkHistoryCard(work: WorkHistoryEntity) {
+fun WorkHistoryCard(
+    work: WorkHistoryEntity,
+    currentCurrency: String,
+    isArabic: Boolean
+) {
     val cornerRadius = LocalAppCornerRadius.current
     val cardShape = RoundedCornerShape(cornerRadius)
 
@@ -449,7 +455,7 @@ fun WorkHistoryCard(work: WorkHistoryEntity) {
             }
 
             Text(
-                text = "+${String.format("%.1f", work.amount)} ج.م",
+                text = "+${CurrencyConfig.format(work.amount, currentCurrency, isArabic)}",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.secondary

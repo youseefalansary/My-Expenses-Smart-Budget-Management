@@ -10,7 +10,6 @@ import com.example.data.MasrofiDatabase
 import com.example.data.MasrofiRepository
 import com.example.data.TransactionEntity
 import com.example.data.WorkHistoryEntity
-import com.example.data.calculateDailyAllowance
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -38,6 +37,7 @@ data class MasrofiUiState(
     val categoryTotalsInPeriod: Map<String, Double> = emptyMap(),
     val totalSpentInPeriod: Double = 0.0,
     val canEndDayToday: Boolean = true,
+    val totalMoneyWithMe: Double = 0.0,
     val approachingCategories: List<CategoryEntity> = emptyList(),
     val exceededCategories: List<CategoryEntity> = emptyList(),
     val isLoading: Boolean = false
@@ -91,7 +91,8 @@ class MasrofiViewModel(application: Application) : AndroidViewModel(application)
         dataFlow,
         selectedPeriod
     ) { (state, recentTx, allTx), (work, debtsList, catsList), period ->
-        val allowance = calculateDailyAllowance(state.dayStartPocketCash, state.daysLeft)
+        val startPocket = if (state.dayStartPocket > 0.0) state.dayStartPocket else (state.pocketCash + state.todaySpent)
+        val allowance = if (state.daysLeft > 0) startPocket / state.daysLeft else 0.0
         val burnRate = if (allowance > 0) (state.todaySpent / allowance).toFloat() else 0f
         val remToday = kotlin.math.max(0.0, allowance - state.todaySpent)
         val todayStr = repository.getTodayDateStr()
@@ -134,6 +135,7 @@ class MasrofiViewModel(application: Application) : AndroidViewModel(application)
             categoryTotalsInPeriod = catMap,
             totalSpentInPeriod = totalPeriod,
             canEndDayToday = canEndDay,
+            totalMoneyWithMe = state.pocketCash + state.vault + state.splurgePool + state.transportReserve,
             approachingCategories = approaching,
             exceededCategories = exceeded,
             isLoading = false
@@ -253,10 +255,23 @@ class MasrofiViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun resetCycle(totalReceived: Double, days: Int, savingsType: String, savingsValue: Double) {
+    fun resetCycle(totalReceived: Double, days: Int, savingsType: String, savingsValue: Double, endDate: String = "") {
         viewModelScope.launch {
-            repository.resetCycle(totalReceived, days, savingsType, savingsValue)
-            _toastEvent.emit("تم بدء دورة جديدة بميزانية $totalReceived ج.م لمدة $days يوم")
+            repository.resetCycle(totalReceived, days, savingsType, savingsValue, endDate)
+            _toastEvent.emit("تم بدء دورة جديدة بميزانية $totalReceived لمدة $days يوم")
+        }
+    }
+
+    fun updateCycleDuration(days: Int, endDate: String) {
+        viewModelScope.launch {
+            repository.updateCycleDuration(days, endDate)
+            _toastEvent.emit("تم تحديث مدة الدورة ($days يوم) وتاريخ الانتهاء بنجاح")
+        }
+    }
+
+    fun updatePreferences(currencyCode: String, languageCode: String) {
+        viewModelScope.launch {
+            repository.updatePreferences(currencyCode, languageCode)
         }
     }
 

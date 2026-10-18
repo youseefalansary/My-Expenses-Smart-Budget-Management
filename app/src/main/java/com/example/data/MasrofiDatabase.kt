@@ -50,19 +50,26 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
 
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("ALTER TABLE `app_state` ADD COLUMN `day_start_pocket_cash` REAL NOT NULL DEFAULT 0.0")
-        // Recover the opening-of-day budget for users upgrading from v1.1.
-        // Tracked pocket deductions are added back; legacy records fall back to today_spent.
-        db.execSQL(
-            """
-            UPDATE `app_state`
-            SET `day_start_pocket_cash` = `pocket_cash` + COALESCE(
-                (SELECT SUM(`deducted_from_pocket`) FROM `transactions`
-                 WHERE `date_iso` = `app_state`.`last_processed_date`),
-                `today_spent`
-            )
-            """.trimIndent()
-        )
+        db.execSQL("ALTER TABLE `app_state` ADD COLUMN `day_start_pocket` REAL NOT NULL DEFAULT 0.0")
+        db.execSQL("UPDATE `app_state` SET `day_start_pocket` = `pocket_cash` + `today_spent` WHERE `day_start_pocket` = 0.0")
+    }
+}
+
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `app_state` ADD COLUMN `currency_code` TEXT NOT NULL DEFAULT 'EGP'")
+        db.execSQL("ALTER TABLE `app_state` ADD COLUMN `language_code` TEXT NOT NULL DEFAULT 'ar'")
+        db.execSQL("ALTER TABLE `app_state` ADD COLUMN `cycle_end_date` TEXT NOT NULL DEFAULT ''")
+
+        db.execSQL("ALTER TABLE `transactions` ADD COLUMN `day_name` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `transactions` ADD COLUMN `exact_time` TEXT NOT NULL DEFAULT ''")
+
+        db.execSQL("ALTER TABLE `work_history` ADD COLUMN `day_name` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `work_history` ADD COLUMN `exact_time` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `work_history` ADD COLUMN `date_millis` INTEGER NOT NULL DEFAULT 0")
+
+        db.execSQL("ALTER TABLE `debts` ADD COLUMN `date_str` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `debts` ADD COLUMN `date_millis` INTEGER NOT NULL DEFAULT 0")
     }
 }
 
@@ -74,7 +81,7 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         DebtEntity::class,
         CategoryEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class MasrofiDatabase : RoomDatabase() {
@@ -95,7 +102,7 @@ abstract class MasrofiDatabase : RoomDatabase() {
                     MasrofiDatabase::class.java,
                     "masrofi_db.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance

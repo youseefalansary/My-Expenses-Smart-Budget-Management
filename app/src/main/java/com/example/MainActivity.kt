@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.RemoveCircle
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -52,23 +53,33 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.MasrofiViewModel
-import com.example.ui.components.AppearanceModal
 import com.example.ui.components.StrictAlertWarningDialog
 import com.example.ui.screens.AddExpenseScreen
 import com.example.ui.screens.FreelanceScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.ReportsDebtsScreen
+import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.CornerStyle
 import com.example.ui.theme.LocalAppCornerRadius
+import com.example.ui.theme.LocalAppCurrency
+import com.example.ui.theme.LocalAppLanguage
+import com.example.ui.theme.Localization
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.ThemeMode
 import com.example.ui.theme.ThemePreferences
 
-sealed class ScreenTab(val index: Int, val title: String, val icon: ImageVector, val tag: String) {
-    object Home : ScreenTab(0, "الرئيسية", Icons.Default.Home, "tab_home")
-    object AddExpense : ScreenTab(1, "خصم صرف", Icons.Default.RemoveCircle, "tab_add_expense")
-    object Freelance : ScreenTab(2, "شغلي", Icons.Default.Work, "tab_freelance")
-    object ReportsDebts : ScreenTab(3, "التقارير والديون", Icons.Default.Assessment, "tab_reports_debts")
+sealed class ScreenTab(
+    val index: Int,
+    val titleAr: String,
+    val titleEn: String,
+    val icon: ImageVector,
+    val tag: String
+) {
+    object Home : ScreenTab(0, "الرئيسية", "Home", Icons.Default.Home, "tab_home")
+    object AddExpense : ScreenTab(1, "خصم صرف", "Expense", Icons.Default.RemoveCircle, "tab_add_expense")
+    object Freelance : ScreenTab(2, "شغلي", "Income", Icons.Default.Work, "tab_freelance")
+    object ReportsDebts : ScreenTab(3, "التقارير", "Reports", Icons.Default.Assessment, "tab_reports_debts")
+    object Settings : ScreenTab(4, "الإعدادات", "Settings", Icons.Default.Settings, "tab_settings")
 }
 
 class MainActivity : ComponentActivity() {
@@ -84,33 +95,42 @@ class MainActivity : ComponentActivity() {
         setContent {
             var themeMode by remember { mutableStateOf(themePrefs.getThemeMode()) }
             var cornerStyle by remember { mutableStateOf(themePrefs.getCornerStyle()) }
-            var showAppearanceModal by remember { mutableStateOf(false) }
+            var currencyCode by remember { mutableStateOf(themePrefs.getCurrency()) }
+            var languageCode by remember { mutableStateOf(themePrefs.getLanguage()) }
+
+            val isRtl = languageCode != "en"
 
             MyApplicationTheme(themeMode = themeMode, cornerStyle = cornerStyle) {
-                // Enforce Arabic RTL layout for the entire application
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                CompositionLocalProvider(
+                    LocalLayoutDirection provides (if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr),
+                    LocalAppCurrency provides currencyCode,
+                    LocalAppLanguage provides languageCode
+                ) {
                     MasrofiApp(
                         viewModel = viewModel,
                         currentTheme = themeMode,
                         currentCorner = cornerStyle,
-                        onOpenAppearanceModal = { showAppearanceModal = true }
+                        currentCurrency = currencyCode,
+                        currentLanguage = languageCode,
+                        onThemeChange = { mode ->
+                            themeMode = mode
+                            themePrefs.setThemeMode(mode)
+                        },
+                        onCornerChange = { style ->
+                            cornerStyle = style
+                            themePrefs.setCornerStyle(style)
+                        },
+                        onCurrencyChange = { curr ->
+                            currencyCode = curr
+                            themePrefs.setCurrency(curr)
+                            viewModel.updatePreferences(curr, languageCode)
+                        },
+                        onLanguageChange = { lang ->
+                            languageCode = lang
+                            themePrefs.setLanguage(lang)
+                            viewModel.updatePreferences(currencyCode, lang)
+                        }
                     )
-
-                    if (showAppearanceModal) {
-                        AppearanceModal(
-                            currentTheme = themeMode,
-                            currentCorner = cornerStyle,
-                            onSelectTheme = { selectedMode ->
-                                themeMode = selectedMode
-                                themePrefs.setThemeMode(selectedMode)
-                            },
-                            onSelectCorner = { selectedCorner ->
-                                cornerStyle = selectedCorner
-                                themePrefs.setCornerStyle(selectedCorner)
-                            },
-                            onDismiss = { showAppearanceModal = false }
-                        )
-                    }
                 }
             }
         }
@@ -122,9 +142,15 @@ fun MasrofiApp(
     viewModel: MasrofiViewModel,
     currentTheme: ThemeMode,
     currentCorner: CornerStyle,
-    onOpenAppearanceModal: () -> Unit
+    currentCurrency: String,
+    currentLanguage: String,
+    onThemeChange: (ThemeMode) -> Unit,
+    onCornerChange: (CornerStyle) -> Unit,
+    onCurrencyChange: (String) -> Unit,
+    onLanguageChange: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val isAr = currentLanguage != "en"
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val vaultWarning by viewModel.vaultWarning.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -138,7 +164,7 @@ fun MasrofiApp(
         selectedTabIndex = 0
     }
 
-    // Collect toast & notification messages
+    // Collect toast messages
     LaunchedEffect(Unit) {
         viewModel.toastEvent.collect { message ->
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
@@ -168,24 +194,26 @@ fun MasrofiApp(
                         ScreenTab.Home,
                         ScreenTab.AddExpense,
                         ScreenTab.Freelance,
-                        ScreenTab.ReportsDebts
+                        ScreenTab.ReportsDebts,
+                        ScreenTab.Settings
                     )
 
                     tabs.forEach { tab ->
                         val isSelected = selectedTabIndex == tab.index
+                        val label = if (isAr) tab.titleAr else tab.titleEn
                         NavigationBarItem(
                             selected = isSelected,
                             onClick = { selectedTabIndex = tab.index },
                             icon = {
                                 Icon(
                                     imageVector = tab.icon,
-                                    contentDescription = tab.title,
+                                    contentDescription = label,
                                     modifier = Modifier.size(24.dp)
                                 )
                             },
                             label = {
                                 Text(
-                                    text = tab.title,
+                                    text = label,
                                     fontSize = 11.sp,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                 )
@@ -212,18 +240,19 @@ fun MasrofiApp(
             when (selectedTabIndex) {
                 0 -> HomeScreen(
                     uiState = uiState,
+                    currentCurrency = currentCurrency,
+                    currentLanguage = currentLanguage,
                     onRollbackExpense = { id, dest -> viewModel.rollbackExpense(id, dest) },
                     onUpdateExpense = { id, title, amount, category -> viewModel.updateExpense(id, title, amount, category) },
                     onEndDay = { viewModel.endDayNow() },
                     onToggleInstituteDay = { viewModel.toggleInstituteDay(it) },
-                    onResetCycle = { total, days, type, value -> viewModel.resetCycle(total, days, type, value) },
-                    onOpenAppearanceModal = onOpenAppearanceModal,
-                    onExportBackup = { callback -> viewModel.exportBackup(callback) },
-                    onImportBackup = { json, callback -> viewModel.importBackup(json, callback) }
+                    onNavigateToSettings = { selectedTabIndex = 4 }
                 )
 
                 1 -> AddExpenseScreen(
                     uiState = uiState,
+                    currentCurrency = currentCurrency,
+                    currentLanguage = currentLanguage,
                     onRecordExpense = { title, amount, category, isYesterday ->
                         viewModel.recordExpense(title, amount, category, isYesterday)
                         selectedTabIndex = 0
@@ -238,6 +267,8 @@ fun MasrofiApp(
 
                 2 -> FreelanceScreen(
                     uiState = uiState,
+                    currentCurrency = currentCurrency,
+                    currentLanguage = currentLanguage,
                     onDepositFreelance = { source, amount ->
                         viewModel.depositFreelance(source, amount)
                     }
@@ -245,6 +276,8 @@ fun MasrofiApp(
 
                 3 -> ReportsDebtsScreen(
                     uiState = uiState,
+                    currentCurrency = currentCurrency,
+                    currentLanguage = currentLanguage,
                     onAddDebt = { person, amount, type ->
                         viewModel.addDebt(person, amount, type)
                     },
@@ -253,10 +286,30 @@ fun MasrofiApp(
                     },
                     onSetPeriod = { period ->
                         viewModel.setReportPeriod(period)
+                    }
+                )
+
+                4 -> SettingsScreen(
+                    uiState = uiState,
+                    currentTheme = currentTheme,
+                    currentCorner = currentCorner,
+                    currentCurrency = currentCurrency,
+                    currentLanguage = currentLanguage,
+                    onSelectTheme = onThemeChange,
+                    onSelectCorner = onCornerChange,
+                    onSelectCurrency = onCurrencyChange,
+                    onSelectLanguage = onLanguageChange,
+                    onUpdateCycleDuration = { days, endDate ->
+                        viewModel.updateCycleDuration(days, endDate)
+                    },
+                    onResetCycle = { total, days, type, value, endDate ->
+                        viewModel.resetCycle(total, days, type, value, endDate)
                     },
                     onUpdateReminders = { daily, threshold, category ->
                         viewModel.updateReminderSettings(daily, threshold, category)
-                    }
+                    },
+                    onExportBackup = { callback -> viewModel.exportBackup(callback) },
+                    onImportBackup = { json, callback -> viewModel.importBackup(json, callback) }
                 )
             }
         }

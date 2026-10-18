@@ -57,8 +57,17 @@ data class AppStateEntity(
     @ColumnInfo(name = "category_alert_enabled", defaultValue = "0")
     val categoryAlertEnabled: Int = 0,
 
-    @ColumnInfo(name = "day_start_pocket_cash", defaultValue = "0.0")
-    val dayStartPocketCash: Double = pocketCash
+    @ColumnInfo(name = "day_start_pocket", defaultValue = "0.0")
+    val dayStartPocket: Double = 0.0,
+
+    @ColumnInfo(name = "currency_code", defaultValue = "'EGP'")
+    val currencyCode: String = "EGP",
+
+    @ColumnInfo(name = "language_code", defaultValue = "'ar'")
+    val languageCode: String = "ar",
+
+    @ColumnInfo(name = "cycle_end_date", defaultValue = "''")
+    val cycleEndDate: String = ""
 )
 
 @Entity(tableName = "transactions")
@@ -94,7 +103,13 @@ data class TransactionEntity(
     val dateMillis: Long = 0L,
 
     @ColumnInfo(name = "date_iso", defaultValue = "''")
-    val dateIso: String = ""
+    val dateIso: String = "",
+
+    @ColumnInfo(name = "day_name", defaultValue = "''")
+    val dayName: String = "",
+
+    @ColumnInfo(name = "exact_time", defaultValue = "''")
+    val exactTime: String = ""
 )
 
 @Entity(tableName = "work_history")
@@ -107,7 +122,16 @@ data class WorkHistoryEntity(
     val amount: Double,
 
     @ColumnInfo(name = "date_str")
-    val dateStr: String
+    val dateStr: String,
+
+    @ColumnInfo(name = "day_name", defaultValue = "''")
+    val dayName: String = "",
+
+    @ColumnInfo(name = "exact_time", defaultValue = "''")
+    val exactTime: String = "",
+
+    @ColumnInfo(name = "date_millis", defaultValue = "0")
+    val dateMillis: Long = 0L
 )
 
 @Entity(tableName = "debts")
@@ -122,7 +146,13 @@ data class DebtEntity(
     val type: String, // 'give' = سلّفت وخرجت من جيبي / 'take' = استلفت ودخلت جيبي
 
     @ColumnInfo(name = "is_settled")
-    val isSettled: Int = 0 // 0 أو 1
+    val isSettled: Int = 0, // 0 أو 1
+
+    @ColumnInfo(name = "date_str", defaultValue = "''")
+    val dateStr: String = "",
+
+    @ColumnInfo(name = "date_millis", defaultValue = "0")
+    val dateMillis: Long = 0L
 )
 
 @Entity(tableName = "categories")

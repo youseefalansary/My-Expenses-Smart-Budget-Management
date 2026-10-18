@@ -348,17 +348,38 @@ fun RollbackExpenseDialog(
 // Requirement 4 & 5: Cycle Settings Modal supporting Percentage OR Fixed Amount
 @Composable
 fun CycleSettingsModal(
-    onDismiss: () -> Unit,
-    onSave: (total: Double, days: Int, savingsType: String, savingsValue: Double) -> Unit
+    currentTotal: Double = 2000.0,
+    currentDays: Int = 30,
+    currentSavingsType: String = "percentage",
+    currentSavingsValue: Double = 20.0,
+    onConfirm: ((total: Double, days: Int, savingsType: String, savingsValue: Double) -> Unit)? = null,
+    onSave: ((total: Double, days: Int, savingsType: String, savingsValue: Double) -> Unit)? = null,
+    onDismiss: () -> Unit
 ) {
     val cornerRadius = LocalAppCornerRadius.current
     val cardShape = RoundedCornerShape(cornerRadius)
     val smallShape = RoundedCornerShape((cornerRadius.value * 0.6f).toInt().coerceAtLeast(3).dp)
 
-    var totalAmountInput by remember { mutableStateOf("2000") }
-    var selectedDays by remember { mutableIntStateOf(30) }
-    var savingsType by remember { mutableStateOf("percentage") } // "percentage" or "fixed"
-    var savingsValueInput by remember { mutableStateOf("20") } // percentage (e.g. 12.5) or fixed (e.g. 400)
+    var totalAmountInput by remember {
+        mutableStateOf(if (currentTotal > 0) currentTotal.toInt().toString() else "2000")
+    }
+    var selectedDays by remember {
+        mutableIntStateOf(if (currentDays > 0) currentDays else 30)
+    }
+    var savingsType by remember {
+        mutableStateOf(if (currentSavingsType.isNotBlank()) currentSavingsType else "percentage")
+    }
+    var savingsValueInput by remember {
+        mutableStateOf(
+            if (currentSavingsValue > 0) {
+                if (currentSavingsValue == currentSavingsValue.toLong().toDouble()) {
+                    currentSavingsValue.toLong().toString()
+                } else {
+                    currentSavingsValue.toString()
+                }
+            } else "20"
+        )
+    }
     var inputError by remember { mutableStateOf<String?>(null) }
 
     val total = totalAmountInput.toDoubleOrNull() ?: 0.0
@@ -610,7 +631,8 @@ fun CycleSettingsModal(
                                 return@Button
                             }
                         }
-                        onSave(total, selectedDays, savingsType, savingsVal)
+                        onSave?.invoke(total, selectedDays, savingsType, savingsVal)
+                        onConfirm?.invoke(total, selectedDays, savingsType, savingsVal)
                         onDismiss()
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -925,13 +947,13 @@ fun WhatsNewDialog(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "ما الجديد في الإصدار 1.1؟",
+                            text = "ما الجديد في الإصدار 2.0 (التحديث الجديد)؟",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "تحديثات دقيقة ومزايا مالية متقدمة",
+                            text = "تطوير شامل للنظام، التواريخ، العملات، واللغات",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -941,14 +963,13 @@ fun WhatsNewDialog(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 val features = listOf(
-                    "إصلاح شلال التراجع" to "عند حذف أي مصروف، يتم استرداد كل قرش للرصيد الدقيق الذي خُصم منه (كاش الجيب، حصالة الوجبة، التوفير، أو مواصلات المعهد).",
-                    "تنفيذ حجز يوم المعهد فعلياً" to "تخصيص 40 ج.م للمواصلات تغطي مشاويرك اليومية تلقائياً دون استهلاك ميزانية الطعام والشراب.",
-                    "حماية إغلاق اليوم" to "منع إنهاء اليوم أكثر من مرة في نفس التاريخ، مع مزامنة ذكية بين الإغلاق اليدوي والإغلاق التلقائي لمنتصف الليل.",
-                    "خيارات التوفير المتطورة" to "إمكانية تحديد التوفير الإجباري بنسبة دقيقة (مع الكسور مثل 12.5%) أو بمبلغ ثابت محدد (مثل 150 ج.م).",
-                    "دقة المبالغ المالية" to "اعتماد مبالغ المصروفات كأعداد صحيحة بالجنيه لضمان واقعية الصرف وسهولة التتبع.",
-                    "تقارير وفترات زمنية مخصصة" to "تصفية التقارير بأسبوع أو شهر أو جميع السجلات مع رسم بياني وإمكانية تعديل أي مصروف.",
-                    "إدارة التصنيفات والحدود" to "إضافة وحذف تصنيفات خاصة ووضع حد مالي أقصى مع تنبيه عند الاقتراب أو التجاوز.",
-                    "النسخ الاحتياطي والتصدير" to "تصدير تقرير المصروفات CSV، مع نسخ احتياطي محلي كامل واستعادة آمنة بضغطة زر."
+                    "التاريخ واليوم والوقت الدقيق" to "البرنامج الآن يسجل ويعرف تاريخ اليوم ويوم الأسبوع (السبت، الأحد...) والوقت بالساعة والدقيقة لكل مصروف أو إضافة مبالغ أو سلفة مع إمكانية التحديد بدقة.",
+                    "خانة مجموع الفلوس كلياً" to "بطاقة بارزة جديدة في الشاشة الرئيسية تجمع لك كل ما تملكه الآن (كاش الجيب + حصالة التوفير الإجباري + حصالة الفائض + محجوز المواصلات) في رقم واحد واضح.",
+                    "شاشة إعدادات كاملة وموحدة" to "جمع كل التفضيلات والإعدادات في صفحة مخصصة واحدة، وإلغاء أي إعدادات متناثرة خارج شاشة الإعدادات لتجربة مستخدم نقية وسلسة.",
+                    "عملات كل الدول العربية والدولار" to "دعم كامل لجميع عملات الدول العربية (22 عملة عربية) بالإضافة للدولار الأمريكي ($) مع تطبيق فوري على كافة بطاقات وسجلات التطبيق.",
+                    "دعم اللغة الإنجليزية" to "إمكانية التبديل بين اللغتين العربية والإنجليزية بلمسة واحدة مع تعديل اتجاه الواجهة ومحاذاة العناصر تلقائياً.",
+                    "تعديل مدة الدورة وتاريخ الانتهاء" to "تحديد وتعديل عدد أيام الدورة المتبقية أو إدخال تاريخ انتهاء الدورة المحدد دون الحاجة لإعادة تصفير الميزانية.",
+                    "حفظ السجلات والتفضيلات بأمان" to "حفظ دائم لكافة التفضيلات والسجلات في قاعدة بيانات Room بدون فقدان أي بيانات سابقة."
                 )
 
                 features.forEach { (title, desc) ->
@@ -966,7 +987,7 @@ fun WhatsNewDialog(
                     shape = smallShape,
                     modifier = Modifier.fillMaxWidth().height(46.dp)
                 ) {
-                    Text("رائع، فهمت التحديثات", fontWeight = FontWeight.Bold)
+                    Text("استكشف التحديث 2.0 الآن", fontWeight = FontWeight.Bold)
                 }
             }
         }

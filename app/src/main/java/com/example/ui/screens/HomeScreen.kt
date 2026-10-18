@@ -22,7 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.DirectionsBus
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Fastfood
@@ -30,9 +30,9 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.NightlightRound
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Payments
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -62,34 +62,32 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.CurrencyConfig
 import com.example.data.TransactionEntity
 import com.example.ui.MasrofiUiState
-import com.example.ui.components.BackupRestoreModal
 import com.example.ui.components.ConfirmationDialog
-import com.example.ui.components.CycleSettingsModal
 import com.example.ui.components.EditExpenseDialog
 import com.example.ui.components.RollbackExpenseDialog
 import com.example.ui.components.WhatsNewDialog
 import com.example.ui.theme.*
-import java.util.Locale
 
 @Composable
 fun HomeScreen(
     uiState: MasrofiUiState,
+    currentCurrency: String,
+    currentLanguage: String,
     onRollbackExpense: (Int, String) -> Unit,
     onUpdateExpense: (Int, String, Double, String) -> Unit,
     onEndDay: () -> Unit,
     onToggleInstituteDay: (Boolean) -> Unit,
-    onResetCycle: (Double, Int, String, Double) -> Unit,
-    onOpenAppearanceModal: () -> Unit,
-    onExportBackup: ((String) -> Unit) -> Unit,
-    onImportBackup: (String, (Boolean) -> Unit) -> Unit,
+    onNavigateToSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val strings = Localization.getStrings(currentLanguage)
+    val isAr = currentLanguage != "en"
+
     var showEndDayConfirm by remember { mutableStateOf(false) }
-    var showCycleModal by remember { mutableStateOf(false) }
     var showWhatsNewModal by remember { mutableStateOf(false) }
-    var showBackupModal by remember { mutableStateOf(false) }
     var transactionToDelete by remember { mutableStateOf<TransactionEntity?>(null) }
     var transactionToEdit by remember { mutableStateOf<TransactionEntity?>(null) }
 
@@ -103,18 +101,18 @@ fun HomeScreen(
     val cardShape = RoundedCornerShape(cornerRadius)
     val smallShape = RoundedCornerShape((cornerRadius.value * 0.6f).toInt().coerceAtLeast(3).dp)
 
-    val pocketCardBrush = when (currentTheme) {
+    val totalMoneyBrush = when (currentTheme) {
         ThemeMode.PURE_LIGHT -> Brush.linearGradient(
-            listOf(Color(0xFFFFFFFF), Color(0xFFF0F9FF), Color(0xFFE0F2FE))
+            listOf(Color(0xFFFFFFFF), Color(0xFFF5F3FF), Color(0xFFEDE9FE))
         )
         ThemeMode.EMERALD_GOLD -> Brush.linearGradient(
-            listOf(EmeraldSurface, EmeraldSurfaceVariant, Color(0xFF0F3B2E))
+            listOf(Color(0xFF0A2E23), Color(0xFF134E3E), Color(0xFF1D5A47))
         )
         ThemeMode.MIDNIGHT_OLED -> Brush.linearGradient(
-            listOf(OledBlack, Color(0xFF140F20), Color(0xFF1E1035))
+            listOf(Color(0xFF0F0B18), Color(0xFF1A122A), Color(0xFF25173E))
         )
         ThemeMode.DARK_SLATE -> Brush.linearGradient(
-            listOf(Slate900, Slate850, Color(0xFF0F2547))
+            listOf(Color(0xFF131D31), Color(0xFF182A45), Color(0xFF1E355A))
         )
     }
 
@@ -139,7 +137,7 @@ fun HomeScreen(
         contentPadding = PaddingValues(top = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // App Header with Version 1.1 Badge & Actions
+        // App Header with Version 2.0 Badge & Quick Settings Access
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -160,7 +158,7 @@ fun HomeScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Payments,
-                            contentDescription = "شعار التطبيق",
+                            contentDescription = strings.appName,
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(26.dp)
                         )
@@ -169,25 +167,25 @@ fun HomeScreen(
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "مصروفي",
+                                text = strings.appName,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.onBackground
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            // Version 1.1 Badge
+                            // Version 2.0 Badge
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
-                                modifier = Modifier.clickable { showWhatsNewModal = true }
+                                modifier = Modifier.clickable { showWhatsNewModal = true }.testTag("v2_badge")
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "جديد · الإصدار 1.1",
+                                        text = strings.versionBadge,
                                         color = MaterialTheme.colorScheme.primary,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold
@@ -196,187 +194,262 @@ fun HomeScreen(
                             }
                         }
                         Text(
-                            text = "نظام إدارة الميزانية والعمل الحر",
+                            text = strings.appSubtitle,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
-                // Action buttons: Backup, Appearance, Cycle
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    IconButton(
-                        onClick = { showBackupModal = true },
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.surfaceVariant, smallShape)
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, smallShape)
-                            .size(38.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Backup,
-                            contentDescription = "النسخ الاحتياطي",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onOpenAppearanceModal,
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.surfaceVariant, smallShape)
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, smallShape)
-                            .size(38.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Palette,
-                            contentDescription = "مظهر التطبيق",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { showCycleModal = true },
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.surfaceVariant, smallShape)
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, smallShape)
-                            .size(38.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Tune,
-                            contentDescription = "إعداد الدورة",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // What's New Mini Banner
-        item {
-            Surface(
-                shape = cardShape,
-                color = MaterialTheme.colorScheme.surface,
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showWhatsNewModal = true }
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                // Settings Navigation Button (Exclusively leads to Settings)
+                IconButton(
+                    onClick = onNavigateToSettings,
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surfaceVariant, smallShape)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, smallShape)
+                        .size(40.dp)
+                        .testTag("home_settings_btn")
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.NewReleases,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = "ما الجديد في التحديث 1.2؟",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "تصحيح المسموح اليومي وترحيل الفائض دون تكرار",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = "عرض التفاصيل ←",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = strings.settingsTitle,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
         }
 
-        // 1. Primary Card: Pocket Cash
+        // USER REQUIREMENT: Keep Total box containing Pocket cash, Mandatory savings, and Surplus piggybank,
+        // and delete the separate detached boxes from it.
+        // Hero Unified Wealth Card
         item {
             Card(
                 shape = cardShape,
                 colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), cardShape)
-                    .testTag("pocket_cash_card")
+                    .testTag("total_money_with_me_card")
             ) {
                 Box(
                     modifier = Modifier
-                        .background(pocketCardBrush)
-                        .padding(20.dp)
+                        .background(totalMoneyBrush)
+                        .padding(18.dp)
                 ) {
                     Column {
+                        // Header: Title & Currency Symbol
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "كاش الجيب المتاح فعلياً للصرف",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Medium
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AccountBalanceWallet,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = strings.totalMoneyWithMe,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = strings.totalMoneySubtitle,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
 
                             Surface(
                                 shape = smallShape,
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                                border = androidx.compose.foundation.BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant)
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
                             ) {
                                 Text(
-                                    text = "متبقي ${appState.daysLeft} يوم",
+                                    text = CurrencyConfig.getSymbol(currentCurrency, isAr),
                                     color = MaterialTheme.colorScheme.primary,
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                        Row(
-                            verticalAlignment = Alignment.Bottom,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = String.format(Locale.US, "%.1f", appState.pocketCash),
-                                fontSize = 38.sp,
-                                fontWeight = FontWeight.Black,
-                                color = MaterialTheme.colorScheme.primary,
-                                letterSpacing = (-0.5).sp
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "ج.م",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(bottom = 6.dp)
-                            )
-                        }
+                        // Large Total Amount
+                        Text(
+                            text = CurrencyConfig.format(uiState.totalMoneyWithMe, currentCurrency, isAr, showDecimals = true),
+                            fontSize = 36.sp,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.primary,
+                            letterSpacing = (-0.5).sp,
+                            modifier = Modifier.testTag("total_money_amount_text")
+                        )
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Daily Allowance and Burn-Rate Section
+                        // The 3 Core Balances inside the Total Box: Pocket cash, Mandatory savings, Surplus piggybank
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // 1. كاش الجيب (Pocket Cash)
+                            Surface(
+                                shape = smallShape,
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("pocket_cash_card")
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(
+                                        text = "💵 ${strings.pocketCash}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = CurrencyConfig.format(appState.pocketCash, currentCurrency, isAr),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "${appState.daysLeft} ${strings.dayUnit} · " + (if (isAr) "متاح للصرف" else "Spendable"),
+                                        fontSize = 9.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            // 2. التوفير الإجباري (Mandatory Savings Vault)
+                            Surface(
+                                shape = smallShape,
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.35f)),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("vault_card")
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(
+                                        text = "🔒 ${strings.savingsVault}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = CurrencyConfig.format(appState.vault, currentCurrency, isAr),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = MaterialTheme.colorScheme.tertiary
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = if (appState.savingsType == "fixed") (if (isAr) "مبلغ ثابت" else "Fixed") else "${appState.savingsValue}%",
+                                        fontSize = 9.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            // 3. حصالة الفائض (Surplus Piggybank)
+                            Surface(
+                                shape = smallShape,
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.35f)),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("splurge_pool_card")
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(
+                                        text = "🎁 ${strings.splurgePool}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = CurrencyConfig.format(appState.splurgePool, currentCurrency, isAr),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = if (isAr) "فوائض الإغلاق" else "Rolled surplus",
+                                        fontSize = 9.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        // Transit reserve if Institute day active
+                        if (appState.isInstituteDay == 1 && appState.transportReserve > 0) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                shape = smallShape,
+                                color = InstituteBlue.copy(alpha = 0.12f),
+                                border = androidx.compose.foundation.BorderStroke(0.8.dp, InstituteBlue.copy(alpha = 0.3f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.DirectionsBus,
+                                            contentDescription = null,
+                                            tint = InstituteBlue,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isAr) "محجوز مواصلات المعهد (محمي من الصرف العادي):" else "Institute Transit Reserve:",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                    Text(
+                                        text = CurrencyConfig.format(appState.transportReserve, currentCurrency, isAr),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = InstituteBlue
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Daily Allowance and Burn-Rate Section inside the Total Box
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f), smallShape)
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), smallShape)
                                 .border(0.8.dp, MaterialTheme.colorScheme.outlineVariant, smallShape)
                                 .padding(12.dp)
                         ) {
@@ -387,13 +460,13 @@ fun HomeScreen(
                             ) {
                                 Column {
                                     Text(
-                                        text = "المسموح اليومي الصافي",
+                                        text = strings.dailyAllowance,
                                         fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
-                                        text = "${String.format(Locale.US, "%.1f", allowance)} ج.م",
-                                        fontSize = 17.sp,
+                                        text = CurrencyConfig.format(allowance, currentCurrency, isAr, showDecimals = true),
+                                        fontSize = 16.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
@@ -401,13 +474,13 @@ fun HomeScreen(
 
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(
-                                        text = "معدل الحرق اليومي (Burn-Rate)",
+                                        text = if (isAr) "معدل الحرق اليومي" else "Burn Rate",
                                         fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
-                                        text = "${(burnRate * 100).toInt()}% (${String.format(Locale.US, "%.1f", spentToday)} ج.م)",
-                                        fontSize = 15.sp,
+                                        text = "${(burnRate * 100).toInt()}% (${CurrencyConfig.format(spentToday, currentCurrency, isAr)})",
+                                        fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = burnRateColor
                                     )
@@ -431,9 +504,9 @@ fun HomeScreen(
 
                             Text(
                                 text = if (spentToday > allowance)
-                                    "🚨 تجاوزت المسموح اليومي بمقدار ${String.format(Locale.US, "%.1f", spentToday - allowance)} ج.م (تفعيل شلال الخصم)!"
+                                    if (isAr) "🚨 تجاوزت المسموح بمقدار ${CurrencyConfig.format(spentToday - allowance, currentCurrency, isAr)}" else "🚨 Exceeded daily allowance by ${CurrencyConfig.format(spentToday - allowance, currentCurrency, isAr)}"
                                 else
-                                    "متبقي لك اليوم: ${String.format(Locale.US, "%.1f", uiState.remainingTodayAllowance)} ج.م",
+                                    "${strings.remainingToday}: ${CurrencyConfig.format(uiState.remainingTodayAllowance, currentCurrency, isAr, showDecimals = true)}",
                                 fontSize = 11.sp,
                                 color = if (spentToday > allowance) MaterialTheme.colorScheme.error else burnRateColor,
                                 fontWeight = FontWeight.SemiBold
@@ -444,99 +517,7 @@ fun HomeScreen(
             }
         }
 
-        // 2. Dual Cards: Splurge Pool & Mandatory Vault
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Splurge Pool Card
-                Card(
-                    shape = cardShape,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f)),
-                    modifier = Modifier.weight(1f).testTag("splurge_pool_card")
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Fastfood,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "حصالة الوجبة الغالية",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "${String.format(Locale.US, "%.1f", appState.splurgePool)} ج.م",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "من فوائض نهاية اليوم للأكلات الفاخرة",
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 14.sp
-                        )
-                    }
-                }
-
-                // Vault Card (Mandatory Savings)
-                Card(
-                    shape = cardShape,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f)),
-                    modifier = Modifier.weight(1f).testTag("vault_card")
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.tertiary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "التوفير الإجباري",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "${String.format(Locale.US, "%.1f", appState.vault)} ج.م",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (appState.savingsType == "fixed") "مبلغ ثابت: ${appState.savingsValue.toInt()} ج.م" else "نسبة مجمدة: ${appState.savingsValue}%",
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 14.sp
-                        )
-                    }
-                }
-            }
-        }
-
-        // 3. Institute Day Card (Real 40 EGP Transport Reservation)
+        // 3. Institute Day Card (Real Transport Reservation)
         item {
             Card(
                 shape = cardShape,
@@ -569,7 +550,7 @@ fun HomeScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DirectionsBus,
-                                contentDescription = "يوم المعهد",
+                                contentDescription = strings.instituteDay,
                                 tint = if (appState.isInstituteDay == 1) InstituteBlue else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -580,7 +561,7 @@ fun HomeScreen(
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "يوم المعهد (حجز مواصلات فعلي)",
+                                    text = strings.instituteDay,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -592,7 +573,7 @@ fun HomeScreen(
                                         color = InstituteBlue.copy(alpha = 0.15f)
                                     ) {
                                         Text(
-                                            text = "متبقي: ${appState.transportReserve.toInt()} ج.م",
+                                            text = "${if (isAr) "متبقي" else "Left"}: ${CurrencyConfig.format(appState.transportReserve, currentCurrency, isAr)}",
                                             color = InstituteBlue,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
@@ -603,9 +584,9 @@ fun HomeScreen(
                             }
                             Text(
                                 text = if (appState.isInstituteDay == 1)
-                                    "يُخصم تلقائياً من الـ 40 ج.م عند تسجيل أي مواصلات دون مساس بالأكل"
+                                    strings.instituteDayActive
                                 else
-                                    "تفعيل حجز 40 ج.م للمواصلات خارج ميزانية الطعام والشراب",
+                                    if (isAr) "حجز مسبق للمواصلات من كاش الجيب لحماية مصاريفك" else "Pre-reserve transit funds from cash",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -627,44 +608,44 @@ fun HomeScreen(
             }
         }
 
-        // 4. End Day Button (Protected against multiple closings per day)
+        // 4. End Day Action Button
         item {
+            val canEnd = uiState.canEndDayToday
             Button(
                 onClick = {
-                    if (uiState.canEndDayToday) {
+                    if (canEnd) {
                         showEndDayConfirm = true
                     }
                 },
-                enabled = uiState.canEndDayToday,
+                enabled = canEnd,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (uiState.canEndDayToday) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    contentColor = if (uiState.canEndDayToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                    containerColor = if (canEnd) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surfaceVariant,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    disabledContentColor = MaterialTheme.colorScheme.outline
                 ),
-                shape = cardShape,
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                shape = smallShape,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
+                    .height(50.dp)
                     .testTag("end_day_button")
             ) {
-                Icon(
-                    imageVector = Icons.Default.NightlightRound,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (uiState.canEndDayToday)
-                        "إنهاء اليوم الآن (ترحيل الفائض للحصالة)"
-                    else
-                        "اليوم أُغلق بالفعل مسبقاً (تم ترحيل فائضه)",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.NightlightRound,
+                        contentDescription = strings.endDayNow,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (canEnd) strings.endDayNow else strings.dayAlreadyEnded,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 
-        // 5. Recent Transactions Header
+        // 5. Recent Expenses List Header
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -672,55 +653,51 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "آخر المصروفات والعمليات",
+                    text = strings.recentExpenses,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = "${uiState.recentTransactions.size} عملية",
-                    fontSize = 12.sp,
+                    text = "${uiState.recentTransactions.size} ${if (isAr) "معاملات" else "entries"}",
+                    fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        // Empty state or transaction items
+        // 6. Transaction Items with Full Date, Day of Week, and Time
         if (uiState.recentTransactions.isEmpty()) {
             item {
-                Surface(
+                Card(
                     shape = cardShape,
-                    color = MaterialTheme.colorScheme.surface,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 12.dp)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
-                        modifier = Modifier.padding(24.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        Text("☕", fontSize = 32.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "لا توجد مصاريف مسجلة حتى الآن",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 14.sp
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "انتقل إلى تبويب 'خصم صرف' لتسجيل أول مصروف!",
-                            color = MaterialTheme.colorScheme.outline,
-                            fontSize = 12.sp
+                            text = strings.noExpensesToday,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
             }
         } else {
-            items(
-                items = uiState.recentTransactions,
-                key = { it.id }
-            ) { tx ->
-                TransactionCard(
+            items(uiState.recentTransactions, key = { it.id }) { tx ->
+                TransactionItem(
                     transaction = tx,
+                    currentCurrency = currentCurrency,
+                    isArabic = isAr,
                     onEditClick = { transactionToEdit = tx },
                     onDeleteClick = { transactionToDelete = tx }
                 )
@@ -728,26 +705,29 @@ fun HomeScreen(
         }
     }
 
-    // Confirmation dialog before ending the day
+    // Confirmation for Manual End Day
     if (showEndDayConfirm) {
         val allowanceVal = uiState.dailyAllowance
-        val surplusVal = kotlin.math.max(0.0, allowanceVal - appState.todaySpent)
+        val surplus = kotlin.math.max(0.0, allowanceVal - appState.todaySpent)
         ConfirmationDialog(
-            title = "تأكيد إنهاء وإغلاق اليوم",
-            message = "هل أنت متأكد من إنهاء اليوم الآن؟\nسيتم إنقاص أيام الدورة بمقدار 1 وترحيل الفائض (${String.format(Locale.US, "%.1f", surplusVal)} ج.م) لحصالة الوجبة الغالية.\n\nتنبيه: لا يمكن إغلاق اليوم أكثر من مرة في نفس التاريخ.",
-            confirmText = "إنهاء وترحيل",
-            cancelText = "تراجع",
+            title = strings.endDayNow,
+            message = if (isAr)
+                "هل أنت متأكد من إنهاء اليوم يدوياً؟\nسيتم ترحيل الفائض المتبقي (${CurrencyConfig.format(surplus, currentCurrency, isAr)}) إلى حصالة الوجبة الغالية وخصم يوم من الدورة."
+            else
+                "Close day manually?\nRemaining surplus (${CurrencyConfig.format(surplus, currentCurrency, isAr)}) will roll to the Surplus Pool and 1 day will be deducted.",
+            confirmText = if (isAr) "تأكيد الإغلاق" else "Confirm Close",
+            cancelText = if (isAr) "إلغاء" else "Cancel",
             onConfirm = { onEndDay() },
             onDismiss = { showEndDayConfirm = false }
         )
     }
 
-    // Rollback / Deletion Dialog with breakdown
+    // Rollback / Delete Expense Dialog
     transactionToDelete?.let { tx ->
         RollbackExpenseDialog(
             transaction = tx,
-            onConfirm = { legacyDest ->
-                onRollbackExpense(tx.id, legacyDest)
+            onConfirm = { dest ->
+                onRollbackExpense(tx.id, dest)
                 transactionToDelete = null
             },
             onDismiss = { transactionToDelete = null }
@@ -759,21 +739,11 @@ fun HomeScreen(
         EditExpenseDialog(
             transaction = tx,
             categories = uiState.categories,
-            onSave = { newTitle, newAmount, newCategory ->
-                onUpdateExpense(tx.id, newTitle, newAmount, newCategory)
+            onSave = { title, amount, category ->
+                onUpdateExpense(tx.id, title, amount, category)
                 transactionToEdit = null
             },
             onDismiss = { transactionToEdit = null }
-        )
-    }
-
-    // Cycle Settings Modal
-    if (showCycleModal) {
-        CycleSettingsModal(
-            onDismiss = { showCycleModal = false },
-            onSave = { total, days, savingsType, savingsValue ->
-                onResetCycle(total, days, savingsType, savingsValue)
-            }
         )
     }
 
@@ -781,25 +751,28 @@ fun HomeScreen(
     if (showWhatsNewModal) {
         WhatsNewDialog(onDismiss = { showWhatsNewModal = false })
     }
-
-    // Backup & Restore Modal
-    if (showBackupModal) {
-        BackupRestoreModal(
-            onExport = onExportBackup,
-            onImport = onImportBackup,
-            onDismiss = { showBackupModal = false }
-        )
-    }
 }
 
 @Composable
-fun TransactionCard(
+fun TransactionItem(
     transaction: TransactionEntity,
+    currentCurrency: String,
+    isArabic: Boolean,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
     val cornerRadius = LocalAppCornerRadius.current
     val cardShape = RoundedCornerShape(cornerRadius)
+
+    val dayDisplay = if (transaction.dayName.isNotBlank()) transaction.dayName else ""
+    val dateDisplay = if (transaction.dateIso.isNotBlank()) transaction.dateIso else ""
+    val timeDisplay = if (transaction.exactTime.isNotBlank()) transaction.exactTime else transaction.createdAt
+
+    val fullDateStr = if (dayDisplay.isNotBlank()) {
+        "$dayDisplay $dateDisplay • $timeDisplay"
+    } else {
+        "${transaction.dateTag} • ${transaction.createdAt}"
+    }
 
     Card(
         shape = cardShape,
@@ -863,25 +836,23 @@ fun TransactionCard(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(4.dp),
-                            color = if (transaction.dateTag == "اليوم") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                            color = if (transaction.dateTag.startsWith("اليوم")) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
                         ) {
                             Text(
-                                text = transaction.dateTag,
+                                text = transaction.category,
                                 fontSize = 10.sp,
-                                color = if (transaction.dateTag == "اليوم") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                             )
                         }
+
                         Text(
-                            text = transaction.category,
+                            text = "• $fullDateStr",
                             fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "• ${transaction.createdAt}",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.outline
+                            color = MaterialTheme.colorScheme.outline,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -889,8 +860,8 @@ fun TransactionCard(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "-${transaction.amount.toInt()} ج.م",
-                    fontSize = 15.sp,
+                    text = "-${CurrencyConfig.format(transaction.amount, currentCurrency, isArabic)}",
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -903,7 +874,7 @@ fun TransactionCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Edit,
-                        contentDescription = "تعديل المصروف",
+                        contentDescription = "تعديل",
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(17.dp)
                     )
@@ -915,7 +886,7 @@ fun TransactionCard(
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Delete,
-                        contentDescription = "حذف واسترداد",
+                        contentDescription = "حذف",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
                     )

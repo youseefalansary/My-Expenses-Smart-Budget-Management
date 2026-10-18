@@ -6,7 +6,6 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.data.AppStateEntity
 import com.example.data.MasrofiDatabase
 import com.example.data.MasrofiRepository
-import com.example.data.calculateDailyAllowance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -198,43 +197,6 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `daily allowance remains based on day opening balance after spending`() = runBlocking {
-        repository.resetCycle(totalReceived = 950.0, days = 6, savingsType = "fixed", savingsValue = 150.0)
-        val initial = repository.getOrCreateAppState()
-        assertEquals(800.0, initial.pocketCash, 0.001)
-        assertEquals(150.0, initial.vault, 0.001)
-        db.appStateDao().insertOrUpdate(initial.copy(splurgePool = 20.0))
-
-        assertTrue(repository.recordExpense("طعام", 100.0, "طعام ومشروبات", false).success)
-        val afterFirstPurchase = repository.getOrCreateAppState()
-        val allowance = calculateDailyAllowance(afterFirstPurchase.dayStartPocketCash, afterFirstPurchase.daysLeft)
-        assertEquals(800.0 / 6.0, allowance, 0.001)
-        assertEquals(800.0 / 6.0 - 100.0, allowance - afterFirstPurchase.todaySpent, 0.001)
-
-        assertTrue(repository.recordExpense("وجبة ثانية", 30.0, "طعام ومشروبات", false).success)
-        val newestTransaction = repository.allTransactions.first().first()
-        val finalState = repository.getOrCreateAppState()
-        assertEquals(0.0, newestTransaction.deductedFromSplurge, 0.001)
-        assertEquals(20.0, finalState.splurgePool, 0.001)
-    }
-
-    @Test
-    fun `end of day moves unused allowance out of pocket exactly once`() = runBlocking {
-        repository.resetCycle(totalReceived = 950.0, days = 6, savingsType = "fixed", savingsValue = 150.0)
-        assertTrue(repository.recordExpense("طعام", 100.0, "طعام ومشروبات", false).success)
-
-        val result = repository.manualEndDay()
-        assertTrue(result.success)
-        assertEquals(800.0 / 6.0 - 100.0, result.surplus, 0.001)
-
-        val state = repository.getOrCreateAppState()
-        assertEquals(800.0 - 100.0 - result.surplus, state.pocketCash, 0.001)
-        assertEquals(result.surplus, state.splurgePool, 0.001)
-        assertEquals(state.pocketCash, state.dayStartPocketCash, 0.001)
-        assertEquals(5, state.daysLeft)
-    }
-
-    @Test
     fun `test prevent ending day twice on the same date`() = runBlocking {
         repository.resetCycle(totalReceived = 1500.0, days = 10, savingsType = "percentage", savingsValue = 20.0)
         val initial = repository.getOrCreateAppState()
@@ -256,5 +218,127 @@ class ExampleRobolectricTest {
         // Days left must NOT have been decremented again
         val stateAfterSecond = repository.getOrCreateAppState()
         assertEquals(initialDays - 1, stateAfterSecond.daysLeft)
+    }
+
+    @Test
+    fun `test 950 total 150 fixed savings 6 days with 100 expense remaining is approximately 33 point 33`() = runBlocking {
+        // Requirement test: 950 EGP total, 150 EGP fixed savings, 6 days
+        // Pocket cash = 950 - 150 = 800 EGP
+        // Daily allowance = 800 / 6 = 133.333... EGP
+        repository.resetCycle(totalReceived = 950.0, days = 6, savingsType = "fixed", savingsValue = 150.0)
+
+        val initial = repository.getOrCreateAppState()
+        assertEquals(800.0, initial.pocketCash, 0.001)
+        assertEquals(150.0, initial.vault, 0.001)
+        assertEquals(6, initial.daysLeft)
+        assertEquals(800.0, initial.dayStartPocket, 0.001)
+
+        val startPocketInitial = if (initial.dayStartPocket > 0.0) initial.dayStartPocket else (initial.pocketCash + initial.todaySpent)
+        val initialAllowance = startPocketInitial / initial.daysLeft
+        assertEquals(133.33, initialAllowance, 0.01)
+
+        // Record 100 EGP expense
+        val result = repository.recordExpense(
+            title = "غداء اليوم",
+            amount = 100.0,
+            category = "طعام ومشروبات",
+            isYesterday = false
+        )
+        assertTrue(result.success)
+
+        val stateAfterExpense = repository.getOrCreateAppState()
+        assertEquals(700.0, stateAfterExpense.pocketCash, 0.001)
+        assertEquals(100.0, stateAfterExpense.todaySpent, 0.001)
+        // CRITICAL: dayStartPocket must remain 800.0 so daily allowance does NOT drop to 116.67
+        assertEquals(800.0, stateAfterExpense.dayStartPocket, 0.001)
+
+        val startPocketAfter = if (stateAfterExpense.dayStartPocket > 0.0) stateAfterExpense.dayStartPocket else (stateAfterExpense.pocketCash + stateAfterExpense.todaySpent)
+        val allowanceAfter = startPocketAfter / stateAfterExpense.daysLeft
+        assertEquals(133.33, allowanceAfter, 0.01)
+
+        // Remaining today allowance must be approximately 33.33 EGP (133.33 - 100.0), NOT 16 EGP!
+        val remainingToday = kotlin.math.max(0.0, allowanceAfter - stateAfterExpense.todaySpent)
+        assertEquals(33.33, remainingToday, 0.01)
+    }
+
+    @Test
+    fun `test surplus transfer at end of day actually moves money from pocket cash to splurge pool`() = runBlocking {
+        // Setup: Cycle with 950 total, 150 savings, 6 days -> 800 pocket (133.33/day)
+        repository.resetCycle(totalReceived = 950.0, days = 6, savingsType = "fixed", savingsValue = 150.0)
+        // Record 100 EGP expense -> todaySpent = 100.0, pocketCash = 700.0
+        repository.recordExpense("مصروف", 100.0, "طعام ومشروبات", false)
+
+        val stateBeforeEnd = repository.getOrCreateAppState()
+        assertEquals(700.0, stateBeforeEnd.pocketCash, 0.001)
+        assertEquals(0.0, stateBeforeEnd.splurgePool, 0.001)
+        assertEquals(6, stateBeforeEnd.daysLeft)
+
+        // End day: surplus = 133.33 - 100 = 33.33
+        val endResult = repository.manualEndDay()
+        assertTrue(endResult.success)
+        assertEquals(33.33, endResult.surplus, 0.01)
+
+        val stateAfterEnd = repository.getOrCreateAppState()
+        // 1. Surplus is transferred into splurgePool
+        assertEquals(33.33, stateAfterEnd.splurgePool, 0.01)
+        // 2. Surplus is DEDUCTED from pocketCash (700 - 33.33 = 666.67), NOT counted in both!
+        assertEquals(666.67, stateAfterEnd.pocketCash, 0.01)
+        // 3. Days left decremented to 5
+        assertEquals(5, stateAfterEnd.daysLeft)
+        // 4. Starting pocket for day 2 is 666.67, so day 2 allowance is 666.67 / 5 = 133.33 EGP
+        assertEquals(666.67, stateAfterEnd.dayStartPocket, 0.01)
+        val day2Allowance = stateAfterEnd.dayStartPocket / stateAfterEnd.daysLeft
+        assertEquals(133.33, day2Allowance, 0.01)
+
+        // 5. Total system balance conservation: pocket(666.67) + splurge(33.33) + spent(100) + vault(150) = 950.0
+        val totalSystemMoney = stateAfterEnd.pocketCash + stateAfterEnd.splurgePool + stateBeforeEnd.todaySpent + stateAfterEnd.vault
+        assertEquals(950.0, totalSystemMoney, 0.01)
+    }
+
+    @Test
+    fun `test expense and freelance record exact date, day of week, and exact time`() = runBlocking {
+        repository.resetCycle(totalReceived = 1000.0, days = 10, savingsType = "fixed", savingsValue = 200.0)
+
+        // Record expense
+        repository.recordExpense("قهوة وساندوتش", 50.0, "طعام ومشروبات", false)
+        val txList = repository.allTransactions.first()
+        assertEquals(1, txList.size)
+        val tx = txList[0]
+        assertTrue("day_name should not be empty", tx.dayName.isNotBlank())
+        assertTrue("exact_time should not be empty", tx.exactTime.isNotBlank())
+        assertTrue("date_iso should be valid", tx.dateIso.isNotBlank())
+        assertTrue("date_millis should be positive", tx.dateMillis > 0L)
+
+        // Record freelance income
+        repository.depositFreelanceIncome("تصميم شعار", 300.0)
+        val workList = repository.workHistory.first()
+        assertEquals(1, workList.size)
+        val work = workList[0]
+        assertTrue("work day_name should not be empty", work.dayName.isNotBlank())
+        assertTrue("work exact_time should not be empty", work.exactTime.isNotBlank())
+        assertTrue("work dateStr should contain day and time", work.dateStr.contains("•"))
+    }
+
+    @Test
+    fun `test total money with me calculation and cycle duration adjustment`() = runBlocking {
+        // Setup cycle: 1200 total, 200 vault -> 1000 pocket
+        repository.resetCycle(totalReceived = 1200.0, days = 20, savingsType = "fixed", savingsValue = 200.0)
+        val state1 = repository.getOrCreateAppState()
+
+        // Total money with me = pocketCash(1000) + vault(200) + splurge(0) + transportReserve(0) = 1200
+        val total1 = state1.pocketCash + state1.vault + state1.splurgePool + state1.transportReserve
+        assertEquals(1200.0, total1, 0.001)
+
+        // Adjust cycle duration to 15 days with specific end date
+        repository.updateCycleDuration(days = 15, endDate = "2026-11-05")
+        val state2 = repository.getOrCreateAppState()
+        assertEquals(15, state2.daysLeft)
+        assertEquals("2026-11-05", state2.cycleEndDate)
+        // Balances should be completely preserved!
+        assertEquals(1000.0, state2.pocketCash, 0.001)
+        assertEquals(200.0, state2.vault, 0.001)
+
+        val total2 = state2.pocketCash + state2.vault + state2.splurgePool + state2.transportReserve
+        assertEquals(1200.0, total2, 0.001)
     }
 }

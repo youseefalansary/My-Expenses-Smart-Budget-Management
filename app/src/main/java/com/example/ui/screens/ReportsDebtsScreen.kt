@@ -26,9 +26,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
@@ -39,13 +39,12 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -63,23 +62,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.CurrencyConfig
+import com.example.data.DateTimeUtils
 import com.example.data.DebtEntity
 import com.example.data.TransactionEntity
 import com.example.ui.MasrofiUiState
 import com.example.ui.components.ConfirmationDialog
 import com.example.ui.theme.*
-import java.util.Locale
 
 @Composable
 fun ReportsDebtsScreen(
     uiState: MasrofiUiState,
+    currentCurrency: String,
+    currentLanguage: String,
     onAddDebt: (person: String, amount: Double, type: String) -> Unit,
     onSettleDebt: (Int) -> Unit,
     onSetPeriod: (String) -> Unit,
-    onUpdateReminders: (daily: Boolean, threshold: Boolean, category: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val isAr = currentLanguage != "en"
+
     var personName by remember { mutableStateOf("") }
     var debtAmountText by remember { mutableStateOf("") }
     var debtType by remember { mutableStateOf("give") }
@@ -107,13 +110,15 @@ fun ReportsDebtsScreen(
 
     fun shareCsvReport() {
         val sb = StringBuilder()
-        sb.append("تقرير مصروفي المالي\n")
-        sb.append("الفترة: ${when (uiState.reportPeriod) { "week" -> "آخر أسبوع"; "month" -> "آخر 30 يوم"; else -> "كل السجلات" }}\n")
-        sb.append("إجمالي المصروفات: ${uiState.totalSpentInPeriod.toInt()} ج.م\n\n")
-        sb.append("المعرف,التاريخ,الوقت,اسم المصروف,التصنيف,المبلغ,من الكاش,من الحصالة,من التوفير,من المواصلات\n")
+        sb.append(if (isAr) "تقرير مصروفي المالي\n" else "Masrofi Financial Report\n")
+        sb.append("${if (isAr) "الفترة" else "Period"}: ${when (uiState.reportPeriod) { "week" -> if (isAr) "آخر أسبوع" else "Last 7 Days"; "month" -> if (isAr) "آخر 30 يوم" else "Last 30 Days"; else -> if (isAr) "كل السجلات" else "All Time" }}\n")
+        sb.append("${if (isAr) "إجمالي المصروفات" else "Total Expenses"}: ${CurrencyConfig.format(uiState.totalSpentInPeriod, currentCurrency, isAr)}\n\n")
+        sb.append(if (isAr) "المعرف,التاريخ,اليوم,الوقت,اسم المصروف,التصنيف,المبلغ,العملة\n" else "ID,Date,Day,Time,Title,Category,Amount,Currency\n")
 
         for (tx in uiState.periodTransactions) {
-            sb.append("${tx.id},${tx.dateIso},${tx.createdAt},\"${tx.title}\",\"${tx.category}\",${tx.amount.toInt()},${tx.deductedFromPocket.toInt()},${tx.deductedFromSplurge.toInt()},${tx.deductedFromVault.toInt()},${tx.deductedFromTransport.toInt()}\n")
+            val dName = if (tx.dayName.isNotBlank()) tx.dayName else tx.dateTag
+            val tTime = if (tx.exactTime.isNotBlank()) tx.exactTime else tx.createdAt
+            sb.append("${tx.id},${tx.dateIso},$dName,$tTime,\"${tx.title}\",\"${tx.category}\",${tx.amount.toInt()},${CurrencyConfig.getSymbol(currentCurrency, isAr)}\n")
         }
 
         val sendIntent = Intent().apply {
@@ -121,7 +126,7 @@ fun ReportsDebtsScreen(
             putExtra(Intent.EXTRA_TEXT, sb.toString())
             type = "text/plain"
         }
-        val shareIntent = Intent.createChooser(sendIntent, "مشاركة تقرير المصروفات CSV")
+        val shareIntent = Intent.createChooser(sendIntent, if (isAr) "مشاركة تقرير المصروفات CSV" else "Share Expenses CSV Report")
         context.startActivity(shareIntent)
     }
 
@@ -134,13 +139,13 @@ fun ReportsDebtsScreen(
     ) {
         item {
             Text(
-                text = "التقارير ودفتر الديون",
+                text = if (isAr) "التقارير ودفتر الديون" else "Reports & Debt Ledger",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                text = "تصفية الفترات الزمنية، حدود التصنيفات، وتصدير التقارير CSV",
+                text = if (isAr) "تصفية الفترات الزمنية، حدود التصنيفات، وتصدير التقارير CSV" else "Filter periods, track category limits, and export CSV",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -152,157 +157,138 @@ fun ReportsDebtsScreen(
                 shape = cardShape,
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().testTag("period_filter_card")
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.DateRange, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("فترة التقرير:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                        Icon(Icons.Default.DateRange, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isAr) "تحديد فترة التقرير:" else "Report Period:",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         listOf(
-                            "week" to "أسبوع",
-                            "month" to "شهر",
-                            "all" to "الكل"
-                        ).forEach { (pKey, label) ->
+                            Triple("week", if (isAr) "أسبوع" else "Week", "7d"),
+                            Triple("month", if (isAr) "شهر (30 يوم)" else "Month (30d)", "30d"),
+                            Triple("all", if (isAr) "كل السجلات" else "All Time", "all")
+                        ).forEach { (key, label, tag) ->
+                            val isSelected = uiState.reportPeriod == key
                             FilterChip(
-                                selected = uiState.reportPeriod == pKey,
-                                onClick = { onSetPeriod(pKey) },
-                                label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                                shape = smallShape
+                                selected = isSelected,
+                                onClick = { onSetPeriod(key) },
+                                label = { Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.primary,
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                shape = smallShape,
+                                modifier = Modifier.weight(1f).testTag("period_chip_$tag")
                             )
                         }
                     }
-                }
-            }
-        }
 
-        // Section 1: Expense Distribution Breakdown
-        item {
-            Card(
-                shape = cardShape,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier.fillMaxWidth().testTag("expense_breakdown_card")
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Period Spend Total Card
+                    Surface(
+                        shape = smallShape,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.PieChart,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
-                                text = "توزيع المصروفات في الفترة",
-                                fontSize = 15.sp,
+                                text = if (isAr) "إجمالي المصروف في الفترة:" else "Total Spent in Period:",
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
+                            Text(
+                                text = CurrencyConfig.format(uiState.totalSpentInPeriod, currentCurrency, isAr),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.error
+                            )
                         }
-                        Text(
-                            text = "إجمالي: ${uiState.totalSpentInPeriod.toInt()} ج.م",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Category Breakdown Cards & Budgets
-                    if (uiState.categoryTotalsInPeriod.isEmpty()) {
+                    // Category Breakdown & Limits
+                    if (uiState.categoryTotalsInPeriod.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "لا توجد مصروفات مسجلة في هذه الفترة المختارة",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 8.dp)
+                            text = if (isAr) "توزيع المصروفات حسب التصنيف:" else "Expenses by Category:",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
                         )
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            uiState.categories.forEach { cat ->
-                                val amount = uiState.categoryTotalsInPeriod[cat.name] ?: 0.0
-                                val pct = if (uiState.totalSpentInPeriod > 0) (amount / uiState.totalSpentInPeriod * 100) else 0.0
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                                Surface(
-                                    shape = smallShape,
-                                    color = MaterialTheme.colorScheme.surfaceVariant,
-                                    modifier = Modifier.fillMaxWidth()
+                        val total = uiState.totalSpentInPeriod.coerceAtLeast(1.0)
+                        uiState.categoryTotalsInPeriod.forEach { (categoryName, amount) ->
+                            val ratio = (amount / total).toFloat().coerceIn(0f, 1f)
+                            val cat = uiState.categories.find { it.name == categoryName }
+                            val isApproaching = cat != null && cat.budgetLimit > 0.0 && amount >= cat.budgetLimit * 0.8 && amount < cat.budgetLimit
+                            val isExceeded = cat != null && cat.budgetLimit > 0.0 && amount >= cat.budgetLimit
+
+                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Column(modifier = Modifier.padding(10.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(cat.emoji, fontSize = 16.sp)
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Text(
-                                                    text = cat.name,
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                            }
+                                    Text(
+                                        text = "${cat?.emoji ?: "📁"} $categoryName",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "${CurrencyConfig.format(amount, currentCurrency, isAr)} (${(ratio * 100).toInt()}%)",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isExceeded) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                LinearProgressIndicator(
+                                    progress = { ratio },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(smallShape),
+                                    color = if (isExceeded) MaterialTheme.colorScheme.error else if (isApproaching) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
 
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = "${amount.toInt()} ج.م",
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Surface(
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                                                ) {
-                                                    Text(
-                                                        text = "${pct.toInt()}%",
-                                                        color = MaterialTheme.colorScheme.primary,
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        // Category budget limit indicator
-                                        if (cat.budgetLimit > 0) {
-                                            Spacer(modifier = Modifier.height(6.dp))
-                                            val limitRatio = (amount / cat.budgetLimit).toFloat().coerceIn(0f, 1f)
-                                            val isExceeded = amount >= cat.budgetLimit
-                                            val isApproaching = amount >= cat.budgetLimit * 0.8 && !isExceeded
-
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween
-                                            ) {
-                                                Text(
-                                                    text = if (isExceeded) "🚨 تجاوزت الحد المالي (${cat.budgetLimit.toInt()} ج.م)"
-                                                    else if (isApproaching) "⚠️ اقتربت من الحد (${cat.budgetLimit.toInt()} ج.م)"
-                                                    else "حد الميزانية: ${cat.budgetLimit.toInt()} ج.م",
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = if (isExceeded) MaterialTheme.colorScheme.error else if (isApproaching) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                                Text("${amount.toInt()}/${cat.budgetLimit.toInt()}", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
-                                            }
-                                        }
+                                if (cat != null && cat.budgetLimit > 0.0) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = if (isExceeded) (if (isAr) "⚠️ تم تجاوز الحد المالي المخصص!" else "⚠️ Exceeded budget limit!") else if (isApproaching) (if (isAr) "⚡ اقتربت من الحد الأقصى (80%)" else "⚡ Approaching limit (80%)") else (if (isAr) "ضمن الحد الأقصى للتصنيف" else "Within budget limit"),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isExceeded) MaterialTheme.colorScheme.error else if (isApproaching) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text("${amount.toInt()}/${cat.budgetLimit.toInt()} ${CurrencyConfig.getSymbol(currentCurrency, isAr)}", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
                                     }
                                 }
                             }
@@ -311,16 +297,16 @@ fun ReportsDebtsScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Requirement 8: Share CSV report button
+                    // Share CSV report button
                     Button(
                         onClick = { shareCsvReport() },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         shape = smallShape,
-                        modifier = Modifier.fillMaxWidth().height(44.dp)
+                        modifier = Modifier.fillMaxWidth().height(44.dp).testTag("share_csv_btn")
                     ) {
                         Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("تصدير ومشاركة تقرير الفترة (CSV / نص)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(if (isAr) "تصدير ومشاركة تقرير الفترة (CSV / نص)" else "Export & Share Report (CSV / Text)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
@@ -339,10 +325,10 @@ fun ReportsDebtsScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text("ليّا بره (سلّفت)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (isAr) "ليّا بره (سلّفت)" else "Money Lent (Receivable)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "${totalGivenActive.toInt()} ج.م",
+                            text = CurrencyConfig.format(totalGivenActive, currentCurrency, isAr),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.secondary
@@ -357,10 +343,10 @@ fun ReportsDebtsScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text("عليّا للناس (استلفت)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (isAr) "عليّا للناس (استلفت)" else "Money Borrowed (Payable)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "${totalTakenActive.toInt()} ج.م",
+                            text = CurrencyConfig.format(totalTakenActive, currentCurrency, isAr),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.error
@@ -370,7 +356,7 @@ fun ReportsDebtsScreen(
             }
         }
 
-        // Section 3: Add New Debt Form
+        // Section 3: Add New Debt Form with Timestamp
         item {
             Card(
                 shape = cardShape,
@@ -380,148 +366,143 @@ fun ReportsDebtsScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "تسجيل سلفة أو دين جديد",
+                        text = if (isAr) "تسجيل سلفة أو دين جديد" else "Record New Debt / Loan",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Date & Time indicator for Debt
+                    Surface(
+                        shape = smallShape,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "${if (isAr) "التاريخ:" else "Date:"} ${DateTimeUtils.formatFullDateTime(System.currentTimeMillis(), DateTimeUtils.getTodayIso(), isAr)}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
                     OutlinedTextField(
                         value = personName,
                         onValueChange = { personName = it },
-                        label = { Text("اسم الشخص") },
-                        placeholder = { Text("مثلاً: أحمد، مصطفى، صاحب السوبرماركت...") },
+                        label = { Text(if (isAr) "اسم الشخص" else "Person's Name") },
+                        placeholder = { Text(if (isAr) "مثلاً: أحمد، مصطفى، صاحب السوبرماركت..." else "e.g., Ahmed, Store Owner...") },
                         singleLine = true,
                         shape = smallShape,
                         modifier = Modifier.fillMaxWidth().testTag("debt_person_input")
                     )
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
+                    val symbol = CurrencyConfig.getSymbol(currentCurrency, isAr)
                     OutlinedTextField(
                         value = debtAmountText,
                         onValueChange = { debtAmountText = it },
-                        label = { Text("المبلغ (ج.م)") },
+                        label = { Text("${if (isAr) "المبلغ" else "Amount"} ($symbol)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         shape = smallShape,
                         modifier = Modifier.fillMaxWidth().testTag("debt_amount_input")
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
+                    // Debt Type Selector: Give (Lent) vs Take (Borrowed)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        FilterChip(
-                            selected = debtType == "give",
-                            onClick = { debtType = "give" },
-                            label = { Text("أنا سلّفت (خرجت من جيبي)", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        Surface(
                             shape = smallShape,
-                            modifier = Modifier.weight(1f).testTag("debt_type_give")
-                        )
+                            color = if (debtType == "give") MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.5.dp,
+                                if (debtType == "give") MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outlineVariant
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { debtType = "give" }
+                                .testTag("debt_type_give")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 10.dp, horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isAr) "سلّفت (خرجت من جيبي)" else "Lent (Money out)",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+                        }
 
-                        FilterChip(
-                            selected = debtType == "take",
-                            onClick = { debtType = "take" },
-                            label = { Text("أنا استلفت (دخلت جيبي)", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        Surface(
                             shape = smallShape,
-                            modifier = Modifier.weight(1f).testTag("debt_type_take")
-                        )
+                            color = if (debtType == "take") MaterialTheme.colorScheme.error.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.5.dp,
+                                if (debtType == "take") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { debtType = "take" }
+                                .testTag("debt_type_take")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 10.dp, horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isAr) "استلفت (دخلت جيبي)" else "Borrowed (Money in)",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Button(
                         onClick = {
-                            if (currentDebtAmount > 0) {
+                            if (currentDebtAmount > 0 && personName.isNotBlank()) {
                                 showDebtConfirmDialog = true
                             }
                         },
-                        enabled = currentDebtAmount > 0,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (debtType == "give") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
-                        ),
+                        enabled = currentDebtAmount > 0 && personName.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         shape = smallShape,
                         modifier = Modifier.fillMaxWidth().height(48.dp).testTag("submit_debt_btn")
                     ) {
-                        Text(
-                            text = if (debtType == "give") "تسجيل سلفة وخصم ${currentDebtAmount.toInt()} ج.م من الكاش"
-                            else "تسجيل دين وإضافة ${currentDebtAmount.toInt()} ج.م للكاش",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
+                        Text(if (isAr) "حفظ وتحديث الرصيد" else "Save & Update Balance", fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
 
-        // Section 4: Reminders & Alerts (Requirement 8)
-        item {
-            Card(
-                shape = cardShape,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Notifications, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("التنبيهات والتذكيرات الاختيارية:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("تذكير مسائي بتسجيل المصروفات اليومية", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
-                        Switch(
-                            checked = uiState.appState.dailyReminderEnabled == 1,
-                            onCheckedChange = { checked ->
-                                onUpdateReminders(checked, uiState.appState.thresholdAlertEnabled == 1, uiState.appState.categoryAlertEnabled == 1)
-                            }
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("تنبيه عند استهلاك 80% من المسموح اليومي", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
-                        Switch(
-                            checked = uiState.appState.thresholdAlertEnabled == 1,
-                            onCheckedChange = { checked ->
-                                onUpdateReminders(uiState.appState.dailyReminderEnabled == 1, checked, uiState.appState.categoryAlertEnabled == 1)
-                            }
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("تنبيه عند الاقتراب أو تجاوز حد أي تصنيف", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
-                        Switch(
-                            checked = uiState.appState.categoryAlertEnabled == 1,
-                            onCheckedChange = { checked ->
-                                onUpdateReminders(uiState.appState.dailyReminderEnabled == 1, uiState.appState.thresholdAlertEnabled == 1, checked)
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        // Section 5: Debts List with Filter
+        // Section 4: Debts List with Filter Tabs
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -529,27 +510,29 @@ fun ReportsDebtsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "دفتر إدارة الديون والسلف",
+                    text = if (isAr) "دفتر إدارة الديون والسلف" else "Debt Records",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf("الكل", "نشطة", "مسددة").forEachIndexed { index, title ->
-                        Surface(
-                            shape = smallShape,
-                            color = if (debtFilterTab == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.clickable { debtFilterTab = index }.testTag("debt_tab_$index")
-                        ) {
-                            Text(
-                                text = title,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (debtFilterTab == index) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        if (isAr) "الكل" else "All",
+                        if (isAr) "النشطة" else "Active",
+                        if (isAr) "المسواة" else "Settled"
+                    ).forEachIndexed { idx, label ->
+                        val isSelected = debtFilterTab == idx
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { debtFilterTab = idx },
+                            label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.primary
+                            ),
+                            shape = smallShape
+                        )
                     }
                 }
             }
@@ -563,33 +546,48 @@ fun ReportsDebtsScreen(
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("لا توجد ديون في هذه الفئة", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("🤝", fontSize = 28.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (isAr) "لا توجد سجلات ديون في هذا القسم" else "No debt records in this filter",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
         } else {
-            items(items = filteredDebts, key = { it.id }) { debt ->
-                DebtCard(debt = debt, onSettleClick = { debtToSettle = debt })
+            items(filteredDebts, key = { it.id }) { debt ->
+                DebtCard(
+                    debt = debt,
+                    currentCurrency = currentCurrency,
+                    isArabic = isAr,
+                    onSettleClick = { debtToSettle = debt }
+                )
             }
         }
     }
 
     // Confirmation dialog before adding debt
     if (showDebtConfirmDialog) {
-        val finalPerson = personName.ifBlank { "شخص" }
         val actionDesc = if (debtType == "give")
-            "سلّفت $finalPerson مبلغ ${currentDebtAmount.toInt()} ج.م (سيتم خصمه من كاش الجيب)"
+            if (isAr) "تسجيل سلفة لـ '$personName' بمبلغ ${CurrencyConfig.format(currentDebtAmount, currentCurrency, isAr)} وخصمها من كاش جيبك"
+            else "Lend ${CurrencyConfig.format(currentDebtAmount, currentCurrency, isAr)} to '$personName' and deduct from Pocket Cash"
         else
-            "استلفت من $finalPerson مبلغ ${currentDebtAmount.toInt()} ج.م (سيتم إضافته لكاش الجيب)"
+            if (isAr) "تسجيل استلاف من '$personName' بمبلغ ${CurrencyConfig.format(currentDebtAmount, currentCurrency, isAr)} وإضافتها لكاش جيبك"
+            else "Borrow ${CurrencyConfig.format(currentDebtAmount, currentCurrency, isAr)} from '$personName' and add to Pocket Cash"
 
         ConfirmationDialog(
-            title = "تأكيد تسجيل السلفة / الدين",
-            message = "هل تريد تأكيد: $actionDesc؟",
-            confirmText = "تأكيد التسجيل",
-            cancelText = "تراجع",
+            title = if (isAr) "تأكيد تسجيل المعاملة" else "Confirm Record",
+            message = "$actionDesc.",
+            confirmText = if (isAr) "تأكيد" else "Confirm",
+            cancelText = if (isAr) "مراجعة" else "Cancel",
             onConfirm = {
-                onAddDebt(finalPerson, currentDebtAmount, debtType)
+                onAddDebt(personName, currentDebtAmount, debtType)
                 personName = ""
                 debtAmountText = ""
             },
@@ -600,15 +598,17 @@ fun ReportsDebtsScreen(
     // Confirmation dialog before settling debt
     debtToSettle?.let { debt ->
         val settleAction = if (debt.type == "give")
-            "استرداد مبلغ ${debt.amount.toInt()} ج.م من ${debt.person} وإضافته لكاش جيبك"
+            if (isAr) "استرداد مبلغ ${CurrencyConfig.format(debt.amount, currentCurrency, isAr)} من ${debt.person} وإضافته لكاش جيبك"
+            else "Collect ${CurrencyConfig.format(debt.amount, currentCurrency, isAr)} from ${debt.person} and add to Pocket Cash"
         else
-            "سداد دين ${debt.person} بمبلغ ${debt.amount.toInt()} ج.م وخصمه من كاش جيبك"
+            if (isAr) "سداد دين ${debt.person} بمبلغ ${CurrencyConfig.format(debt.amount, currentCurrency, isAr)} وخصمه من كاش جيبك"
+            else "Pay debt of ${CurrencyConfig.format(debt.amount, currentCurrency, isAr)} to ${debt.person} and deduct from Pocket Cash"
 
         ConfirmationDialog(
-            title = "تأكيد سداد / تسوية الدين",
-            message = "هل تمت التسوية بالفعل؟\nسيتم: $settleAction.",
-            confirmText = "تم السداد والتسوية",
-            cancelText = "إلغاء",
+            title = if (isAr) "تأكيد سداد / تسوية الدين" else "Confirm Debt Settlement",
+            message = "$settleAction.",
+            confirmText = if (isAr) "تم السداد والتسوية" else "Confirm Settlement",
+            cancelText = if (isAr) "إلغاء" else "Cancel",
             onConfirm = {
                 onSettleDebt(debt.id)
                 debtToSettle = null
@@ -621,6 +621,8 @@ fun ReportsDebtsScreen(
 @Composable
 fun DebtCard(
     debt: DebtEntity,
+    currentCurrency: String,
+    isArabic: Boolean,
     onSettleClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -651,6 +653,14 @@ fun DebtCard(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    if (debt.dateStr.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = debt.dateStr,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -665,7 +675,7 @@ fun DebtCard(
                             )
                         ) {
                             Text(
-                                text = if (isGive) "سلفة منّي (لك عنده)" else "دين عليّ (له عندك)",
+                                text = if (isGive) (if (isArabic) "سلفة منّي (لك عنده)" else "Lent") else (if (isArabic) "دين عليّ (له عندك)" else "Borrowed"),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (isGive) NeonEmerald else NeonAmber,
@@ -682,7 +692,7 @@ fun DebtCard(
                             )
                         ) {
                             Text(
-                                text = if (isSettled) "تمت التسوية بنجاح ✅" else "قيد الانتظار ⏳",
+                                text = if (isSettled) (if (isArabic) "تمت التسوية بنجاح ✅" else "Settled ✅") else (if (isArabic) "قيد الانتظار ⏳" else "Pending ⏳"),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (isSettled) NeonCyan else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -694,7 +704,7 @@ fun DebtCard(
 
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = "${debt.amount.toInt()} ج.م",
+                        text = CurrencyConfig.format(debt.amount, currentCurrency, isArabic),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.ExtraBold,
                         color = if (isGive) NeonEmerald else NeonCoral
@@ -711,7 +721,7 @@ fun DebtCard(
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             modifier = Modifier.testTag("settle_debt_button_${debt.id}")
                         ) {
-                            Text("تسوية الآن", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(if (isArabic) "تسوية الآن" else "Settle Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

@@ -103,7 +103,25 @@ class ThemePreferences(context: Context) {
     fun setCornerStyle(style: CornerStyle) {
         prefs.edit().putString("corner_style", style.id).apply()
     }
+
+    fun getLanguage(): String {
+        return prefs.getString("app_language", "ar") ?: "ar"
+    }
+
+    fun setLanguage(languageCode: String) {
+        prefs.edit().putString("app_language", languageCode).apply()
+    }
+
+    fun getCurrency(): String {
+        return prefs.getString("app_currency", "EGP") ?: "EGP"
+    }
+
+    fun setCurrency(currencyCode: String) {
+        prefs.edit().putString("app_currency", currencyCode).apply()
+    }
 }
 
 val LocalAppCornerRadius = compositionLocalOf { 20.dp }
 val LocalThemeMode = compositionLocalOf { ThemeMode.DARK_SLATE }
+val LocalAppCurrency = compositionLocalOf { "EGP" }
+val LocalAppLanguage = compositionLocalOf { "ar" }
