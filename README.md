@@ -9,7 +9,13 @@
 - [تنزيل APK الإصدار 2.0](release/Masrofi-v2.0-debug.apk)
 - [تنزيل ملفات مصدر الإصدار 2.0](release/Masrofi-v2.0-source.zip)
 
-تظل ملفات الإصدارات السابقة محفوظة في مجلد `release`.
+## تنزيلات الإصدارات السابقة
+
+- **مصروفي 1.2:** [تنزيل APK](release/Masrofi-v1.2-debug.apk) · [تنزيل ملفات المصدر](release/Masrofi-v1.2-source.zip)
+- **مصروفي 1.1:** [تنزيل APK](release/Masrofi-v1.1-debug.apk) · [تنزيل ملفات المصدر](release/Masrofi-v1.1-source.zip)
+- **النسخة الأقدم المتاحة:** [تنزيل APK](release/Masrofaty-debug.apk)
+
+ملفات APK وملفات المصدر المرتبطة بكل إصدار محفوظة في مجلد `release`.
 
 ## البناء والاختبارات
 
