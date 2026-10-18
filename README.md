@@ -6,14 +6,14 @@
 
 - الإصدار: **2.0** (versionCode **4**)
 - اسم التطبيق: **مصروفي**
-- [تنزيل APK الإصدار 2.0](release/Masrofi-v2.0-debug.apk)
-- [تنزيل ملفات مصدر الإصدار 2.0](release/Masrofi-v2.0-source.zip)
+- [تنزيل APK الإصدار 2.0](https://raw.githubusercontent.com/youseefalansary/My-Expenses-Smart-Budget-Management/main/release/Masrofi-v2.0-debug.apk)
+- [تنزيل ملفات مصدر الإصدار 2.0](https://raw.githubusercontent.com/youseefalansary/My-Expenses-Smart-Budget-Management/main/release/Masrofi-v2.0-source.zip)
 
 ## تنزيلات الإصدارات السابقة
 
-- **مصروفي 1.2:** [تنزيل APK](release/Masrofi-v1.2-debug.apk) · [تنزيل ملفات المصدر](release/Masrofi-v1.2-source.zip)
-- **مصروفي 1.1:** [تنزيل APK](release/Masrofi-v1.1-debug.apk) · [تنزيل ملفات المصدر](release/Masrofi-v1.1-source.zip)
-- **النسخة الأقدم المتاحة:** [تنزيل APK](release/Masrofaty-debug.apk)
+- **مصروفي 1.2:** [تنزيل APK](https://raw.githubusercontent.com/youseefalansary/My-Expenses-Smart-Budget-Management/main/release/Masrofi-v1.2-debug.apk) · [تنزيل ملفات المصدر](https://raw.githubusercontent.com/youseefalansary/My-Expenses-Smart-Budget-Management/main/release/Masrofi-v1.2-source.zip)
+- **مصروفي 1.1:** [تنزيل APK](https://raw.githubusercontent.com/youseefalansary/My-Expenses-Smart-Budget-Management/main/release/Masrofi-v1.1-debug.apk) · [تنزيل ملفات المصدر](https://raw.githubusercontent.com/youseefalansary/My-Expenses-Smart-Budget-Management/main/release/Masrofi-v1.1-source.zip)
+- **النسخة الأقدم المتاحة:** [تنزيل APK](https://raw.githubusercontent.com/youseefalansary/My-Expenses-Smart-Budget-Management/main/release/Masrofaty-debug.apk)
 
 ملفات APK وملفات المصدر المرتبطة بكل إصدار محفوظة في مجلد `release`.
 
